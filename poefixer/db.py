@@ -13,26 +13,30 @@ import rapidjson as json
 
 Base = declarative_base()
 
+# We're not doing a full implementation, here...
+# pylint: disable=abstract-method
 class SemiJSON(sqlalchemy.types.TypeDecorator):
+    """A stopgap for using SQLite implementations that do not support JSON"""
+
     impl = sqlalchemy.UnicodeText
 
     def load_dialect_impl(self, dialect):
         if dialect.name == 'sqlite':
             return dialect.type_descriptor(self.impl)
-        else:
-            return dialect.type_descriptor(sqlalchemy.JSON())
+        return dialect.type_descriptor(sqlalchemy.JSON())
 
+    # rapidjson doesn't appear to let python know that it has a dumps
+    # function, so we have to give pylint a heads-up
+    # pylint: disable=c-extension-no-member
     def process_bind_param(self, value, dialect):
         if dialect.name == 'sqlite' and value is not None:
             value = json.dumps(value)
-        else:
-            return value
+        return value
 
     def process_result_value(self, value, dialect):
         if dialect.name == 'sqlite' and value is not None:
             value = json.loads(value)
-        else:
-            return value
+        return value
 
 # SQLAlchemy table definitions do not need methods.
 #
@@ -178,8 +182,8 @@ class PoeDb:
         self._insert_or_update_row(Item, item, simple_fields)
 
     def _insert_or_update_row(self, table, thing, simple_fields):
-        existing = self.session.query(table).filter(
-		table.api_id==thing.id).first()
+        query = self.session.query(table)
+        existing = query.filter(table.api_id == thing.id).first()
         if existing:
             row = existing
         else:

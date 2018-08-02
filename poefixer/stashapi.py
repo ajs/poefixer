@@ -7,11 +7,9 @@ the `PoeApi` class.
 
 
 import re
-import sys
 import time
-import requests
 import datetime
-import collections
+import requests
 import rapidjson as json
 
 
@@ -26,6 +24,8 @@ __email__ = "ajs@ajs.com"
 POE_STASH_API_ENDPOINT = 'http://www.pathofexile.com/api/public-stash-tabs'
 
 
+# Our abstract base creates its public methods dynamically
+# pylint: disable=too-few-public-methods
 class PoeApiData:
     """
     A base class for data that is similar to a namedtuple, but for which
@@ -52,11 +52,16 @@ class PoeApiData:
     def __init_subclass__(cls):
         def data_getter(name):
             """Because python doesn't have real closures"""
+            # Because we don't want to conflict with auto-generate names:
+            # pylint: disable=protected-access
             return property(lambda  self: self._data.get(name, None))
 
         super().__init_subclass__()
         assert cls.fields, "Incorrectly initialized PoeApiData class"
         added = []
+        # pylint doesn't know that we just validated that fields
+        # has been overridden.
+        # pylint: disable=not-an-iterable
         for field in cls.fields:
             if not hasattr(cls, field):
                 added += [field]
@@ -67,6 +72,8 @@ class PoeApiData:
 
 
 class Item(PoeApiData):
+    """This is the core PoE item structure"""
+
     name_cleaner_re = re.compile(r'^\<\<.*\>\>')
     fields = [
         "abyssJewel", "additionalProperties", "artFilename",
@@ -79,27 +86,37 @@ class Item(PoeApiData):
         "prophecyText", "requirements", "secDescrText", "shaper",
         "socketedItems", "sockets", "stackSize", "support",
         "talismanTier", "typeLine", "utilityMods", "verified", "w", "x",
-        "y" ]
+        "y"]
 
     def _clean_markup(self, value):
         return re.sub(self.name_cleaner_re, '', value)
 
+    # These names are given to us by the API, and are not python-aware.
+    # pylint: disable=invalid-name
     @property
     def typeLine(self):
+        """The type of the item. Markup is stripped."""
+
         return self._clean_markup(self._data['typeLine'])
 
     @property
     def name(self):
+        """The basic name of the item. Markup is stripped."""
+
         return self._clean_markup(self._data['name'])
 
 
 class Stash(PoeApiData):
+    """A stash aka "stash tab" is a collection of items in an x/y grid"""
+
     fields = [
         'accountName', 'lastCharacterName', 'id', 'stash', 'stashType',
-        'items', 'public' ]
+        'items', 'public']
 
     @property
     def items(self):
+        """The array of items (as a generator of Item objects)"""
+
         for item in self._data['items']:
             yield Item(item)
 
@@ -144,6 +161,8 @@ class PoeApi:
         self.last_time = None
 
     def rate_wait(self):
+        """Pause for the rest of the time left in our rate limiting parameter"""
+
         if self.last_time:
             now = datetime.datetime.now()
             delta = now - self.last_time
@@ -153,24 +172,35 @@ class PoeApi:
         self.set_last_time()
 
     def set_last_time(self):
+        """Set the time of the last request for rate limiting"""
+
         self.last_time = datetime.datetime.now()
 
     def get_next(self):
+        """Return the next stash generator"""
+
         self.rate_wait()
         data, self.next_id = self._get_data(next_id=self.next_id)
         return self.stash_generator(data)
 
-    def stash_generator(self, data):
+    @staticmethod
+    def stash_generator(data):
+        """Turn a data blob from the API into a generator of Stash objects"""
+
         for stash in data:
             yield Stash(stash)
 
     def _get_data(self, next_id=None):
+        """Actually read from the API via requests library"""
+
         url = self.api_root
         if next_id:
             url += '?id=' + next_id
         req = requests.get(url)
         self.set_last_time()
         req.raise_for_status()
+        # rapidjson doesn't tell python what its methods are...
+        # pylint: disable=c-extension-no-member
         data = json.loads(req.text)
         if 'next_change_id' not in data:
             raise KeyError('next_change_id required field not present in response')
@@ -184,9 +214,10 @@ if __name__ == '__main__':
     stashes = api.get_next()
     print("Next_id is %s" % api.next_id)
     done = False
-    for stash in stashes:
-        for item in stash.items:
-            print("stash contains item: %s %s" % (item.name, item.typeLine))
+    for input_stash in stashes:
+        for stashitem in input_stash.items:
+            print(
+                "stash contains item: %s %s" % (stashitem.name, stashitem.typeLine))
             done = True
             break
         if done:

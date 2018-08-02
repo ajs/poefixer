@@ -97,7 +97,7 @@ class Item(Base):
     prophecyDiffText = sqlalchemy.Column(sqlalchemy.Unicode(255))
     prophecyText = sqlalchemy.Column(sqlalchemy.Unicode(255))
     requirements = sqlalchemy.Column(SemiJSON)
-    secDescrText = sqlalchemy.Column(sqlalchemy.String(255))
+    secDescrText = sqlalchemy.Column(sqlalchemy.Text)
     shaper = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     sockets = sqlalchemy.Column(SemiJSON)
     stackSize = sqlalchemy.Column(sqlalchemy.Integer)

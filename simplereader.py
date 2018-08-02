@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 """
 Trivial API reader/writer for testing
 """
@@ -15,5 +17,6 @@ while True:
     for stash in api.get_next():
         print("Inserting stash...")
         db.insert_api_stash(stash, with_items=True)
+    db.session.commit()
 
-#vim: et sw=4 sts=4 ai:
+# vim: sw=4 sts=4 ai:

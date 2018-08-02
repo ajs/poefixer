@@ -81,10 +81,16 @@ class Item(PoeApiData):
         "talismanTier", "typeLine", "utilityMods", "verified", "w", "x",
         "y" ]
 
+    def _clean_markup(self, value):
+        return re.sub(self.name_cleaner_re, '', value)
+
+    @property
+    def typeLine(self):
+        return self._clean_markup(self._data['typeLine'])
+
     @property
     def name(self):
-        name = self._data['name']
-        return re.sub(self.name_cleaner_re, '', name)
+        return self._clean_markup(self._data['name'])
 
 
 class Stash(PoeApiData):

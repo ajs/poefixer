@@ -62,6 +62,10 @@ class Stash(Base):
     updated_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
 
+    def __repr__(self):
+        return "<Stash(stash=%r, id=%s, api_id=%s)>" % (
+            self.stash, self.id, self.api_id)
+
 
 class Item(Base):
     """
@@ -126,7 +130,7 @@ class Item(Base):
 
 
     def __repr__(self):
-        return "<Item(name=%r, id=%s, api_id=%s, typeLine=%r" % (
+        return "<Item(name=%r, id=%s, api_id=%s, typeLine=%r)>" % (
             self.name, self.id, self.api_id, self.typeLine)
 
 

@@ -105,12 +105,6 @@ class ApiItem(PoeApiData):
 
         return self._clean_markup(self._data['name'])
 
-    def __init__(self, data, stash):
-        assert stash.id is not None, \
-            "Attempt to associate an item with a NULL stash ID"
-        self.stash_id = stash.id
-        super().__init__(data)
-
 
 class ApiStash(PoeApiData):
     """A stash aka "stash tab" is a collection of items in an x/y grid"""
@@ -124,7 +118,7 @@ class ApiStash(PoeApiData):
         """The array of items (as a generator of ApiItem objects)"""
 
         for item in self._data['items']:
-            yield ApiItem(item, self)
+            yield ApiItem(item)
 
 
 class PoeApi:

@@ -157,7 +157,7 @@ class PoeDb:
 
     def insert_api_stash(self, stash, with_items=False):
         """
-        Given a PoeApi.Stash, insert its data into the Item table
+        Given a PoeApi.ApiStash, insert its data into the Item table
 
         An optional `with_items` boolean may be set to true in order
         to recurse into the items in the given stash and insert/update

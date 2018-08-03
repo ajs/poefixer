@@ -71,7 +71,7 @@ class PoeApiData:
         self._data = data
 
 
-class Item(PoeApiData):
+class ApiItem(PoeApiData):
     """This is the core PoE item structure"""
 
     name_cleaner_re = re.compile(r'^\<\<.*\>\>')
@@ -106,7 +106,8 @@ class Item(PoeApiData):
         return self._clean_markup(self._data['name'])
 
 
-class Stash(PoeApiData):
+
+class ApiStash(PoeApiData):
     """A stash aka "stash tab" is a collection of items in an x/y grid"""
 
     fields = [
@@ -115,10 +116,10 @@ class Stash(PoeApiData):
 
     @property
     def items(self):
-        """The array of items (as a generator of Item objects)"""
+        """The array of items (as a generator of ApiItem objects)"""
 
         for item in self._data['items']:
-            yield Item(item)
+            yield ApiItem(item, self)
 
 
 class PoeApi:
@@ -185,10 +186,10 @@ class PoeApi:
 
     @staticmethod
     def stash_generator(data):
-        """Turn a data blob from the API into a generator of Stash objects"""
+        """Turn a data blob from the API into a generator of ApiStash objects"""
 
         for stash in data:
-            yield Stash(stash)
+            yield ApiStash(stash)
 
     def _get_data(self, next_id=None):
         """Actually read from the API via requests library"""

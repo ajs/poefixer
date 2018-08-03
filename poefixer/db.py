@@ -137,6 +137,44 @@ class Item(Base):
             self.name, self.id, self.api_id, self.typeLine)
 
 
+class Sale(Base):
+    """
+    The digested sales data for each item.
+    """
+
+    __tablename__ = 'sale'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    item_id = sqlalchemy.Column(
+        sqlalchemy.Integer, sqlalchemy.ForeignKey("item.id"), nullable=False)
+    item_api_id = sqlalchemy.Column(
+        sqlalchemy.String(255), nullable=False, index=True, unique=True)
+    is_currency = sqlalchemy.Column(
+        sqlalchemy.Boolean, nullable=False, index=True)
+    sale_currency = sqlalchemy.Column(
+        sqlalchemy.String(32), nullable=False, index=True)
+    sale_amount = sqlalchemy.Column(sqlalchemy.Float)
+    sale_amount_chaos = sqlalchemy.Column(sqlalchemy.Float)
+    created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    updated_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+
+    def __repr__(self):
+        return "<Sale(id=%s, item_id=%s, item_api_id=%s)>" % (
+            self.id, self.item_id, self.item_api_id)
+
+    def __str__(self):
+        """Summarize the sale for general consumption"""
+
+        return (
+            "Sale(%s) ItemId=%s ItemApiId=%s value=%s "
+            "Chaos=%s Time=%s") % (
+            self.id, self.item_id, self.item_api_id,
+            self.sale_amount + " " + self.sale_currency,
+            self.sale_amount_chaos)
+
+
 class PoeDb:
     """
     This is the wrapper for the item/stash database. All you need to

@@ -7,6 +7,7 @@ and a new, auto-incrementing primary key is labeled "id".
 """
 
 
+import time
 import sqlalchemy
 from sqlalchemy.ext.declarative import declarative_base
 import rapidjson as json
@@ -55,6 +56,8 @@ class Stash(Base):
     stash = sqlalchemy.Column(sqlalchemy.Unicode(255))
     stashType = sqlalchemy.Column(sqlalchemy.Unicode(32), nullable=False)
     public = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+    created_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    updated_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
 
 
 class Item(Base):
@@ -110,6 +113,8 @@ class Item(Base):
     typeLine = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
     utilityMods = sqlalchemy.Column(SemiJSON)
     verified = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+    created_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    updated_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
 
 
     def __repr__(self):
@@ -182,14 +187,17 @@ class PoeDb:
         self._insert_or_update_row(Item, item, simple_fields)
 
     def _insert_or_update_row(self, table, thing, simple_fields):
+        now = int(time.time())
         query = self.session.query(table)
         existing = query.filter(table.api_id == thing.id).first()
         if existing:
             row = existing
         else:
             row = table()
+            row.created_at = now
 
         row.api_id = thing.id
+        row.updated_at = now
 
         for field in simple_fields:
             setattr(row, field, getattr(thing, field, None))

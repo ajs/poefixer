@@ -30,6 +30,7 @@ def pull_data(database_dsn):
         for stash in api.get_next():
             print("Inserting stash...")
             db.insert_api_stash(stash, with_items=True)
+        print("Pass complete.")
         db.session.commit()
 
 

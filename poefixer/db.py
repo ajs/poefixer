@@ -78,6 +78,9 @@ class Item(Base):
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
     api_id = sqlalchemy.Column(
         sqlalchemy.String(255), nullable=False, index=True, unique=True)
+    stash_id = sqlalchemy.Column(
+        sqlalchemy.Integer, sqlalchemy.ForeignKey("stash.id"),
+        nullable=False)
     h = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     w = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     x = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -170,13 +173,15 @@ class PoeDb:
             "accountName", "lastCharacterName", "stash", "stashType",
             "public" ]
 
-        self._insert_or_update_row(Stash, stash, simple_fields)
+        dbstash = self._insert_or_update_row(Stash, stash, simple_fields)
 
         if with_items:
+            self.session.flush()
+            self.session.refresh(dbstash)
             for item in stash.items:
-                self.insert_api_item(item)
+                self.insert_api_item(item, dbstash)
 
-    def insert_api_item(self, item):
+    def insert_api_item(self, item, stash):
         """Given a PoeApi.Item, insert its data into the Item table"""
 
         # pylint: disable=bad-whitespace
@@ -196,9 +201,9 @@ class PoeDb:
         # pylint: disable=fixme
         #TODO socketed items...
 
-        self._insert_or_update_row(Item, item, simple_fields)
+        self._insert_or_update_row(Item, item, simple_fields, stash=stash)
 
-    def _insert_or_update_row(self, table, thing, simple_fields):
+    def _insert_or_update_row(self, table, thing, simple_fields, stash=None):
         now = int(time.time())
         query = self.session.query(table)
         existing = query.filter(table.api_id == thing.id).first()
@@ -210,11 +215,14 @@ class PoeDb:
 
         row.api_id = thing.id
         row.updated_at = now
+        if stash:
+            row.stash_id = stash.id
 
         for field in simple_fields:
             setattr(row, field, getattr(thing, field, None))
 
         self.session.add(row)
+        return row
 
     @property
     def session(self):

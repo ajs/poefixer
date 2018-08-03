@@ -50,14 +50,17 @@ class Stash(Base):
     __tablename__ = 'stash'
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    api_id = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
+    api_id = sqlalchemy.Column(
+        sqlalchemy.String(255), nullable=False, index=True, unique=True)
     accountName = sqlalchemy.Column(sqlalchemy.Unicode(255))
     lastCharacterName = sqlalchemy.Column(sqlalchemy.Unicode(255))
     stash = sqlalchemy.Column(sqlalchemy.Unicode(255))
     stashType = sqlalchemy.Column(sqlalchemy.Unicode(32), nullable=False)
     public = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
-    created_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    updated_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    updated_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
 
 
 class Item(Base):
@@ -69,7 +72,8 @@ class Item(Base):
 
 
     id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    api_id = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
+    api_id = sqlalchemy.Column(
+        sqlalchemy.String(255), nullable=False, index=True, unique=True)
     h = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     w = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     x = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -97,7 +101,8 @@ class Item(Base):
     league = sqlalchemy.Column(sqlalchemy.Unicode(64), nullable=False)
     lockedToCharacter = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     maxStackSize = sqlalchemy.Column(sqlalchemy.Integer)
-    name = sqlalchemy.Column(sqlalchemy.Unicode(255), nullable=False)
+    name = sqlalchemy.Column(
+        sqlalchemy.Unicode(255), nullable=False, index=True)
     nextLevelRequirements = sqlalchemy.Column(SemiJSON)
     note = sqlalchemy.Column(sqlalchemy.Unicode(255))
     properties = sqlalchemy.Column(SemiJSON)
@@ -110,11 +115,14 @@ class Item(Base):
     stackSize = sqlalchemy.Column(sqlalchemy.Integer)
     support = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     talismanTier = sqlalchemy.Column(sqlalchemy.Integer)
-    typeLine = sqlalchemy.Column(sqlalchemy.String(255), nullable=False)
+    typeLine = sqlalchemy.Column(
+        sqlalchemy.String(255), nullable=False, index=True)
     utilityMods = sqlalchemy.Column(SemiJSON)
     verified = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
-    created_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    updated_at = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    updated_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
 
 
     def __repr__(self):

@@ -8,6 +8,7 @@ the `PoeApi` class.
 
 import re
 import time
+import logging
 import datetime
 import requests
 import requests.packages.urllib3.util.retry as urllib_retry
@@ -85,6 +86,25 @@ class PoeApiData:
 
     def __init__(self, data):
         self._data = data
+
+    def _repr_fields(self):
+        def format_fields():
+            for field in sorted(self.fields):
+                value = getattr(self, field)
+                if value is None:
+                    # Skip empty values for summary
+                    continue
+                elif isinstance(value, str) and value.startswith('http'):
+                    if len(value) > 10:
+                        value = value[0:7] + '...'
+                yield "%s=%r" % (field, value)
+        return ", ".join(format_fields())
+
+    def __repr__(self):
+        if self.fields:
+            return "<%s(%s)>" % (self.__class__.__name__, self._repr_fields())
+        else:
+            return "<%s()>" % self.__class__.__name__
 
 
 class ApiItem(PoeApiData):
@@ -168,7 +188,8 @@ class PoeApi:
     next_id = None
     rate = 1.1
 
-    def __init__(self, next_id=None, rate=None, api_root=None):
+    def __init__(self, next_id=None, rate=None, api_root=None, logger=logging):
+        self.logger = logger
         self.next_id = next_id
         if rate is not None:
             self.rate = datetime.timedelta(seconds=rate)
@@ -212,6 +233,7 @@ class PoeApi:
 
         url = self.api_root
         if next_id:
+            self.logger.info("Requesting next stash set: %s" % next_id)
             url += '?id=' + next_id
         else:
             self.logger.info("Requesting first stash set")
@@ -221,6 +243,7 @@ class PoeApi:
         # rapidjson doesn't tell python what its methods are...
         # pylint: disable=c-extension-no-member
         data = json.loads(req.text)
+        self.logger.debug("Stash data loaded from API")
         if 'next_change_id' not in data:
             raise KeyError('next_change_id required field not present in response')
         return (data['stashes'], data['next_change_id'])

@@ -7,7 +7,9 @@ and a new, auto-incrementing primary key is labeled "id".
 """
 
 
+import re
 import time
+import logging
 import sqlalchemy
 from sqlalchemy.ext.declarative import declarative_base
 import rapidjson as json
@@ -192,6 +194,7 @@ class PoeDb:
     """
 
     db_connect = 'sqlite:///poetest.db'
+    _safe_uri_re = r'(?<=\:)(.*?)(?=\@)'
     _session = None
     _engine = None
     _session_maker = None
@@ -212,6 +215,7 @@ class PoeDb:
             "public" ]
 
         dbstash = self._insert_or_update_row(Stash, stash, simple_fields)
+        self.logger.debug("Stash insert complete: %s", dbstash.id)
 
         if with_items:
             self.session.flush()
@@ -244,12 +248,17 @@ class PoeDb:
     def _insert_or_update_row(self, table, thing, simple_fields, stash=None):
         now = int(time.time())
         query = self.session.query(table)
-        existing = query.filter(table.api_id == thing.id).first()
+        if thing.id:
+            existing = query.filter(table.api_id == thing.id).first()
+        else:
+            existing = None
         if existing:
             row = existing
+            self.logger.debug("UPDATED ITEM: %r // %r", thing, existing)
         else:
             row = table()
             row.created_at = now
+            self.logger.debug("NEW ITEM: %r", thing)
 
         row.api_id = thing.id
         row.updated_at = now
@@ -273,10 +282,16 @@ class PoeDb:
     def create_database(self):
         """Write a new database from our schema"""
 
-        Base.metadata.create_all(self._engine)
+        PoeDbBase.metadata.create_all(self._engine)
 
-    def __init__(self, db_connect=None, echo=False):
+    def _safe_uri(self, uri):
+        return re.sub(self._safe_uri_re, '', uri)
+
+    def __init__(self, db_connect=None, echo=False, logger=logging):
+        self.logger=logger
+
         if db_connect is not None:
+            self.logger.debug("Connect URI: %s", self._safe_uri(db_connect))
             self.db_connect = db_connect
 
         self._engine = sqlalchemy.create_engine(self.db_connect, echo=echo)

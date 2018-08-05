@@ -6,7 +6,9 @@ Perform analysis on the PoE pricing database for various purposes
 
 
 import re
+import sys
 import time
+import logging
 import argparse
 import poefixer
 import sqlalchemy
@@ -154,7 +156,24 @@ def do_currency_fixer(db):
 if __name__ == '__main__':
     options = parse_args()
     db = poefixer.PoeDb(db_connect=options.database_dsn)
-    do_fixer(db, options.mode)
+    db.session.bind.execution_options(stream_results=True)
+
+    logger = logging.getLogger('poefixer')
+    if options.debug:
+        loglevel = 'DEBUG'
+    elif options.verbose:
+        loglevel = 'INFO'
+    else:
+        loglevel = 'WARNING'
+    logger.setLevel(loglevel)
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s')
+    ch.setFormatter(formatter)
+    logger.addHandler(ch)
+
+    logger.debug("Set logging level: %s" % loglevel)
+    do_fixer(db, options.mode, logger)
 
 
 # vim: et:sw=4:sts=4:ai:

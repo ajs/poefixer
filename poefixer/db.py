@@ -156,6 +156,8 @@ class Sale(PoeDbBase):
         sqlalchemy.Integer, sqlalchemy.ForeignKey("item.id"), nullable=False)
     item_api_id = sqlalchemy.Column(
         sqlalchemy.String(255), nullable=False, index=True, unique=True)
+    name = sqlalchemy.Column(
+        sqlalchemy.String(255), nullable=False, index=True)
     is_currency = sqlalchemy.Column(
         sqlalchemy.Boolean, nullable=False, index=True)
     sale_currency = sqlalchemy.Column(

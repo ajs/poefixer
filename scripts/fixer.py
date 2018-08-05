@@ -163,6 +163,7 @@ class CurrencyFixer:
             existing = poefixer.Sale(
                 item_id=row.Item.id,
                 item_api_id=row.Item.api_id,
+                name=name,
                 is_currency=is_currency,
                 sale_currency=currency,
                 sale_amount=price,

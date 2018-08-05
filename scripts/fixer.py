@@ -19,101 +19,123 @@ PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+) (\w+)')
 
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        '-d', '--database-dsn', action='store',
-        default=DEFAULT_DSN,
+        '-d', '--database-dsn',
+        action='store', default=DEFAULT_DSN,
         help='Database connection string for SQLAlchemy')
     parser.add_argument(
-        'mode', action='store', help='Mode to run in.')
+        'mode',
+        choices=('currency',), # more to come...
+        nargs=1,
+        action='store', help='Mode to run in.')
+    parser.add_argument(
+        '-v', '--verbose',
+        action='store_true', help='Verbose output')
+    parser.add_argument(
+        '--debug',
+        action='store_true', help='Debugging output')
     return parser.parse_args()
 
-def pull_data(database_dsn):
-    db = poefixer.PoeDb(db_connect=database_dsn)
-    api = poefixer.PoeApi()
-
-    db.create_database()
-
-    while True:
-        for stash in api.get_next():
-            print("Inserting stash...")
-            db.insert_api_stash(stash, with_items=True)
-        db.session.commit()
-
-def do_fixer(db, mode):
+def do_fixer(db, mode, logger):
+    assert len(mode) == 1, "Only one mode allowed"
+    mode = mode[0]
     if mode == 'currency':
         # Crunch and update currency values
-        do_currency_fixer(db)
+        CurrencyFixer(db, logger).do_currency_fixer()
     else:
         raise ValueError("Expected execution mode, got: " + mode)
 
-def parse_note(note):
-    currencies = {
-        "alch": "Orb of Alchemy",
-        "alt": "Orb of Alteration",
-        "blessed": "Blessed Orb",
-        "chance": "Orb of Chance",
-        "chaos": "Chaos Orb",
-        "chisel": "Cartographer's Chisel",
-        "chrom": "Chromatic Orb",
-        "divine": "Divine Orb",
-        "exa": "Exalted Orb",
-        "fuse": "Orb of Fusing",
-        "gcp": "Gemcutter's Prism",
-        "jew": "Jeweller's Orb",
-        "regal": "Regal Orb",
-        "regret": "Orb of Regret",
-        "scour": "Orb of Scouring",
-        "vaal": "Vaal Orb"}
+class CurrencyFixer:
+    db = None
+    logger = None
 
-    if note is not None:
-        match = PRICE_RE.search(note)
-        if match:
-            try:
-                (sale_type, amt, currency) = match.groups()
-                if '/' in amt:
-                    num, den = amt.split('/', 1)
-                    amt = float(num) / float(den)
-                else:
-                    amt = float(amt)
-                if  currency in currencies:
-                    return (amt, currencies[currency])
-            except ValueError:
-                # If float() fails it raises ValueError, so we just
-                # TODO Need logging here, once we integrate python
-                # logging handling.
-                pass
-    return (None, None)
+    def __init__(self, db, logger):
+        self.db = db
+        self.logger = logger
 
-def do_currency_fixer(db):
-    """Process all of the currency data we've seen to date."""
+    def parse_note(self, note):
+        currencies = {
+            "alch": "Orb of Alchemy",
+            "alt": "Orb of Alteration",
+            "blessed": "Blessed Orb",
+            "chance": "Orb of Chance",
+            "chaos": "Chaos Orb",
+            "chisel": "Cartographer's Chisel",
+            "chrom": "Chromatic Orb",
+            "divine": "Divine Orb",
+            "exa": "Exalted Orb",
+            "fuse": "Orb of Fusing",
+            "gcp": "Gemcutter's Prism",
+            "jew": "Jeweller's Orb",
+            "regal": "Regal Orb",
+            "regret": "Orb of Regret",
+            "scour": "Orb of Scouring",
+            "vaal": "Vaal Orb"}
 
-    now = time.time()
-    last_week = now - (7*24*60*60) # close enough, don't sweat leap time, etc
-    query = db.session.query(poefixer.Item, poefixer.Stash)
-    query = query.add_columns(
-        poefixer.Item.typeLine, poefixer.Item.note, poefixer.Item.updated_at,
-        poefixer.Stash.stash, poefixer.Item.name, poefixer.Stash.public,
-        poefixer.Item.id, poefixer.Item.api_id)
-    # This looks wrong, but sqlalchemy turns it into "note is not NULL"
-    query = query.filter(poefixer.Stash.id == poefixer.Item.stash_id)
-    query = query.filter(sqlalchemy.or_(
-        sqlalchemy.and_(
-            poefixer.Item.note != None,
-            poefixer.Item.note != ""),
-        sqlalchemy.and_(
-            poefixer.Stash.stash != None,
-            poefixer.Stash.stash != "")))
-    query = query.filter(poefixer.Stash.public == True)
-    #query = query.filter(sqlalchemy.func.json_contains_path(
-    #    poefixer.Item.category, 'all', '$.currency') == 1)
-    query = query.filter(poefixer.Item.updated_at >= int(last_week))
+        if note is not None:
+            match = PRICE_RE.search(note)
+            if match:
+                try:
+                    (sale_type, amt, currency) = match.groups()
+                    if '/' in amt:
+                        num, den = amt.split('/', 1)
+                        amt = float(num) / float(den)
+                    else:
+                        amt = float(amt)
+                    if  currency in currencies:
+                        return (amt, currencies[currency])
+                except ValueError as e:
+                    # If float() fails it raises ValueError
+                    if 'float' in str(e):
+                        self.logger.debug("Invalid price: %r" % note)
+                    else:
+                        raise
+        return (None, None)
 
-    # Stashes are named with a conventional pricing descriptor and
-    # items can have a note in the same format. The price of an item
-    # is the item price with the stash price as a fallback.
-    prices = {}
-    for row in query.all():
+    def _currency_query(self, block_size, offset):
+        """
+        Get a query from Item (linked to Stash) that are above the
+        last processed item id. Return a query that will fetch `block_size`
+        rows starting at `offset`.
+        """
+
+        Item = poefixer.Item
+        processed_item = self.get_last_processed_item_id()
+
+        query = self.db.session.query(poefixer.Item, poefixer.Stash)
+        query = query.add_columns(
+            poefixer.Item.id,
+            poefixer.Item.api_id,
+            poefixer.Item.typeLine,
+            poefixer.Item.note,
+            poefixer.Item.updated_at,
+            poefixer.Stash.stash,
+            poefixer.Item.name,
+            poefixer.Stash.public)
+        query = query.filter(poefixer.Stash.id == poefixer.Item.stash_id)
+        query = query.filter(sqlalchemy.or_(
+            sqlalchemy.and_(
+                poefixer.Item.note != None,
+                poefixer.Item.note != ""),
+            sqlalchemy.and_(
+                poefixer.Stash.stash != None,
+                poefixer.Stash.stash != "")))
+        query = query.filter(poefixer.Stash.public == True)
+        #query = query.filter(sqlalchemy.func.json_contains_path(
+        #    poefixer.Item.category, 'all', '$.currency') == 1)
+        #query = query.filter(poefixer.Item.updated_at >= int(last_week))
+        if processed_item:
+            query = query.filter(poefixer.Item.id > processed_item)
+        # Tried streaming, but the result is just too large for that.
+        query = query.order_by(Item.id).limit(block_size)
+        if offset:
+            query = query.offset(offset)
+
+        return query
+
+    def _process_sale(self, row):
         is_currency = 'currency' in row.Item.category
         if is_currency:
             name = row.Item.typeLine
@@ -152,8 +174,55 @@ def do_currency_fixer(db):
             existing.sale_amount = price
             existing.sale_amount_chaos = None
             existing.updated_at = int(time.time())
-        db.session.add(existing)
-    db.session.commit()
+
+        self.db.session.add(existing)
+
+    def get_last_processed_item_id(self):
+        query = db.session.query(poefixer.Sale)
+        query = query.order_by(poefixer.Sale.item_id.desc()).limit(1)
+        result = query.one_or_none()
+        if result:
+            when = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(result.updated_at))
+            self.logger.debug(
+                "Last processed sale for item: %s(%s)", result.item_id, when)
+            query2 = db.session.query(poefixer.Item)
+            query2 = query2.order_by(poefixer.Item.id.desc()).limit(1)
+            result2 = query2.one_or_none()
+            when2 = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.localtime(result2.updated_at))
+            self.logger.debug("Last processed item in db: %s", result2.id)
+            return result.item_id
+        return None
+
+
+    def do_currency_fixer(self):
+        """Process all of the currency data we've seen to date."""
+
+        offset = 0
+        count = 0
+        todo = True
+        block_size = 1000 # Number of rows per block
+
+        while todo:
+            query = self._currency_query(block_size, offset)
+
+            # Stashes are named with a conventional pricing descriptor and
+            # items can have a note in the same format. The price of an item
+            # is the item price with the stash price as a fallback.
+            prices = {}
+            count = 0
+            for row in query.all():
+                max_id = row.Item.id
+                count += 1
+                self.logger.debug("Row in %s" % row.Item.id)
+                if count % 100 == 0:
+                    self.logger.info("%s rows in..." % (count + offset))
+                self._process_sale(row)
+
+            todo = count == block_size
+            offset += count
+            db.session.commit()
 
 if __name__ == '__main__':
     options = parse_args()

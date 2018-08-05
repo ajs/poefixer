@@ -10,6 +10,8 @@ import re
 import time
 import datetime
 import requests
+import requests.packages.urllib3.util.retry as urllib_retry
+import requests.adapters as requests_adapters
 import rapidjson as json
 
 
@@ -23,6 +25,20 @@ __email__ = "ajs@ajs.com"
 
 POE_STASH_API_ENDPOINT = 'http://www.pathofexile.com/api/public-stash-tabs'
 
+
+# TODO: Move this out into something more central
+def requests_context():
+    session = requests.Session()
+    retry = urllib_retry.Retry(
+        total=10,
+        backoff_factor=1,
+        status_forcelist=(500, 502, 503, 504))
+    adapter = requests_adapters.HTTPAdapter(max_retries=retry)
+
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+
+    return session
 
 # Our abstract base creates its public methods dynamically
 # pylint: disable=too-few-public-methods
@@ -159,6 +175,7 @@ class PoeApi:
         if api_root is not None:
             self.api_root = api_root
         self.last_time = None
+        self.rq_context = requests_context()
 
     def rate_wait(self):
         """Pause for the rest of the time left in our rate limiting parameter"""
@@ -196,7 +213,9 @@ class PoeApi:
         url = self.api_root
         if next_id:
             url += '?id=' + next_id
-        req = requests.get(url)
+        else:
+            self.logger.info("Requesting first stash set")
+        req = self.rq_context.get(url)
         self.set_last_time()
         req.raise_for_status()
         # rapidjson doesn't tell python what its methods are...

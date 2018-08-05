@@ -193,7 +193,7 @@ class CurrencyFixer:
         record as a new field so we don't have to guess later.
         """
 
-        query = db.session.query(poefixer.Sale, poefixer.Item)
+        query = self.db.session.query(poefixer.Sale, poefixer.Item)
         query = query.filter(poefixer.Sale.item_id == poefixer.Item.id)
         query = query.order_by(poefixer.Sale.updated_at.desc()).limit(1)
         result = query.one_or_none()
@@ -205,7 +205,7 @@ class CurrencyFixer:
             self.logger.debug(
                 "Last processed sale for item: %s(%s)",
                 result.Sale.item_id, when)
-            query2 = db.session.query(poefixer.Item)
+            query2 = self.db.session.query(poefixer.Item)
             query2 = query2.order_by(poefixer.Item.updated_at.desc()).limit(1)
             result2 = query2.one_or_none()
             when2 = time.strftime(
@@ -244,7 +244,7 @@ class CurrencyFixer:
 
             todo = count == block_size
             offset += count
-            db.session.commit()
+            self.db.session.commit()
 
 if __name__ == '__main__':
     options = parse_args()

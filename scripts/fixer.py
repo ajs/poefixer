@@ -127,6 +127,10 @@ class CurrencyFixer:
         #    poefixer.Item.category, 'all', '$.currency') == 1)
         #query = query.filter(poefixer.Item.updated_at >= int(last_week))
         if processed_time:
+            when = time.strftime(
+                "%Y-%m-%d %H:%M:%S",
+                time.localtime(processed_time))
+            self.logger.info("Starting from %s", when)
             query = query.filter(poefixer.Item.updated_at >= processed_time)
         # Tried streaming, but the result is just too large for that.
         query = query.order_by(Item.updated_at).limit(block_size)

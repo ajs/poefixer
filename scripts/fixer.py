@@ -226,8 +226,6 @@ class CurrencyFixer:
 
 if __name__ == '__main__':
     options = parse_args()
-    db = poefixer.PoeDb(db_connect=options.database_dsn)
-    db.session.bind.execution_options(stream_results=True)
 
     logger = logging.getLogger('poefixer')
     if options.debug:
@@ -242,8 +240,10 @@ if __name__ == '__main__':
     formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
-
     logger.debug("Set logging level: %s" % loglevel)
+
+    db = poefixer.PoeDb(db_connect=options.database_dsn, logger=logger)
+    db.session.bind.execution_options(stream_results=True)
     do_fixer(db, options.mode, logger)
 
 

@@ -195,7 +195,7 @@ class PoeDb:
     """
 
     db_connect = 'sqlite:///poetest.db'
-    _safe_uri_re = r'(?<=\:)(.*?)(?=\@)'
+    _safe_uri_re = re.compile(r'(?<=\:)(.*?)(?=\@)')
     _session = None
     _engine = None
     _session_maker = None
@@ -286,7 +286,7 @@ class PoeDb:
         PoeDbBase.metadata.create_all(self._engine)
 
     def _safe_uri(self, uri):
-        return re.sub(self._safe_uri_re, '', uri)
+        return self._safe_uri_re.sub('', uri)
 
     def __init__(self, db_connect=None, echo=False, logger=logging):
         self.logger=logger

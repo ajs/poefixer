@@ -226,6 +226,15 @@ class CurrencyFixer:
         todo = True
         block_size = 1000 # Number of rows per block
 
+        try:
+            poefixer.Sale.__table__.create(bind=self.db.session.bind)
+        except sqlalchemy.exc.InternalError as e:
+            if 'already exists' not in str(e):
+                raise
+            self.logger.info("Sale table already exists.")
+        else:
+            self.logger.info("Sale table created.")
+
         while todo:
             query = self._currency_query(block_size, offset)
 

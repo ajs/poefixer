@@ -97,12 +97,12 @@ class CurrencyFixer:
     def _currency_query(self, block_size, offset):
         """
         Get a query from Item (linked to Stash) that are above the
-        last processed item id. Return a query that will fetch `block_size`
+        last processed time. Return a query that will fetch `block_size`
         rows starting at `offset`.
         """
 
         Item = poefixer.Item
-        processed_item = self.get_last_processed_item_id()
+        processed_time = self.get_last_processed_time()
 
         query = self.db.session.query(poefixer.Item, poefixer.Stash)
         query = query.add_columns(
@@ -126,10 +126,10 @@ class CurrencyFixer:
         #query = query.filter(sqlalchemy.func.json_contains_path(
         #    poefixer.Item.category, 'all', '$.currency') == 1)
         #query = query.filter(poefixer.Item.updated_at >= int(last_week))
-        if processed_item:
-            query = query.filter(poefixer.Item.id > processed_item)
+        if processed_time:
+            query = query.filter(poefixer.Item.updated_at >= processed_time)
         # Tried streaming, but the result is just too large for that.
-        query = query.order_by(Item.id).limit(block_size)
+        query = query.order_by(Item.updated_at).limit(block_size)
         if offset:
             query = query.offset(offset)
 
@@ -177,22 +177,43 @@ class CurrencyFixer:
 
         self.db.session.add(existing)
 
-    def get_last_processed_item_id(self):
-        query = db.session.query(poefixer.Sale)
-        query = query.order_by(poefixer.Sale.item_id.desc()).limit(1)
+    def get_last_processed_time(self):
+        """
+        Get whichever is older:
+
+            * The update time of the most recent sales record
+            * The update time of the item that record references
+
+        This is necessary because an update to the item may have
+        come in, and so now the sales record is the most autoritative
+        source we have.
+
+        TODO: Should probably copy the item update time into the sales
+        record as a new field so we don't have to guess later.
+        """
+
+        query = db.session.query(poefixer.Sale, poefixer.Item)
+        query = query.filter(poefixer.Sale.item_id == poefixer.Item.id)
+        query = query.order_by(poefixer.Sale.updated_at.desc()).limit(1)
         result = query.one_or_none()
         if result:
+            reference_time = min(result.Sale.updated_at, result.Item.updated_at)
             when = time.strftime(
-                "%Y-%m-%d %H:%M:%S", time.localtime(result.updated_at))
+                "%Y-%m-%d %H:%M:%S",
+                time.localtime(reference_time))
             self.logger.debug(
-                "Last processed sale for item: %s(%s)", result.item_id, when)
+                "Last processed sale for item: %s(%s)",
+                result.Sale.item_id, when)
             query2 = db.session.query(poefixer.Item)
-            query2 = query2.order_by(poefixer.Item.id.desc()).limit(1)
+            query2 = query2.order_by(poefixer.Item.updated_at.desc()).limit(1)
             result2 = query2.one_or_none()
             when2 = time.strftime(
-                "%Y-%m-%d %H:%M:%S", time.localtime(result2.updated_at))
-            self.logger.debug("Last processed item in db: %s", result2.id)
-            return result.item_id
+                "%Y-%m-%d %H:%M:%S",
+                time.localtime(result2.updated_at))
+            self.logger.debug(
+                "Last processed item in db: %s(%s)",
+                result2.id, when2)
+            return reference_time
         return None
 
 

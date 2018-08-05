@@ -129,6 +129,10 @@ class Item(PoeDbBase):
         sqlalchemy.String(255), nullable=False, index=True)
     utilityMods = sqlalchemy.Column(SemiJSON)
     verified = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+    # This is an internal field which we use to track stash updates.
+    # When a new version of the stash shows up, we mark all of the
+    # items in it inactive, then we re-activate the one's we see again.
+    active = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False, default=True)
     created_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
     updated_at = sqlalchemy.Column(
@@ -200,13 +204,14 @@ class PoeDb:
     _engine = None
     _session_maker = None
 
-    def insert_api_stash(self, stash, with_items=False):
+    def insert_api_stash(self, stash, with_items=False, keep_items=False):
         """
         Given a PoeApi.ApiStash, insert its data into the Item table
 
         An optional `with_items` boolean may be set to true in order
         to recurse into the items in the given stash and insert/update
-        them as well.
+        them as well. The `keep_items` flag tells the insert to not
+        mark all items associated with this insert as inactive.
         """
 
         # I really dislike mashing my close-brackets up against my data
@@ -219,10 +224,20 @@ class PoeDb:
         self.logger.debug("Stash insert complete: %s", dbstash.id)
 
         if with_items:
+            if not keep_items:
+                self._invalidate_stash_items(dbstash)
             self.session.flush()
             self.session.refresh(dbstash)
             for item in stash.items:
                 self.insert_api_item(item, dbstash)
+
+    def _invalidate_stash_items(self, dbstash):
+        """Mark all items in this stash as inactive, pending update"""
+
+        update = sqlalchemy.sql.expression.update(Item)
+        update = update.where(Item.stash_id == dbstash.id)
+        update = update.values(active=False)
+        self.session.execute(update)
 
     def insert_api_item(self, item, stash):
         """Given a PoeApi.Item, insert its data into the Item table"""
@@ -265,6 +280,8 @@ class PoeDb:
         row.updated_at = now
         if stash:
             row.stash_id = stash.id
+        if table == Item:
+            row.active = True
 
         for field in simple_fields:
             setattr(row, field, getattr(thing, field, None))

@@ -121,20 +121,22 @@ def do_currency_fixer(db):
             name = row.Item.name + " " + row.Item.typeLine
         pricing = row.Item.note
         stash_pricing = row.Stash.stash
-        stash_price, stash_currency = parse_note(stash_pricing)
-        price, currency = parse_note(pricing)
+        stash_price, stash_currency = self.parse_note(stash_pricing)
+        price, currency = self.parse_note(pricing)
         if price is None:
             # No item price, so fall back to stash
             price, currency = (stash_price, stash_currency)
         if price is None or price == 0:
-            continue
-        print(
-            "%s %sfor sale for %s %s" % (
+            self.logger.debug("No sale")
+            return
+        self.logger.debug(
+            "%s%sfor sale for %s %s" % (
                 name,
                 ("(currency) " if is_currency else ""),
                 price, currency))
-        existing = db.session.query(poefixer.Sale).filter(
+        existing = self.db.session.query(poefixer.Sale).filter(
             poefixer.Sale.item_id == row.Item.id).one_or_none()
+
         if not existing:
             existing = poefixer.Sale(
                 item_id=row.Item.id,

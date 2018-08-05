@@ -14,7 +14,8 @@ import sqlalchemy
 from sqlalchemy.ext.declarative import declarative_base
 import rapidjson as json
 
-Base = declarative_base()
+PoeDbBase = declarative_base()
+PoeDbMetadata = PoeDbBase.metadata
 
 # We're not doing a full implementation, here...
 # pylint: disable=abstract-method
@@ -44,7 +45,7 @@ class SemiJSON(sqlalchemy.types.TypeDecorator):
 # SQLAlchemy table definitions do not need methods.
 #
 # pylint: disable=too-few-public-methods
-class Stash(Base):
+class Stash(PoeDbBase):
     """
     The db-table for API stash data
     """
@@ -69,7 +70,7 @@ class Stash(Base):
             self.stash, self.id, self.api_id)
 
 
-class Item(Base):
+class Item(PoeDbBase):
     """
     The db-table for API item data
     """
@@ -139,7 +140,7 @@ class Item(Base):
             self.name, self.id, self.api_id, self.typeLine)
 
 
-class Sale(Base):
+class Sale(PoeDbBase):
     """
     The digested sales data for each item.
     """

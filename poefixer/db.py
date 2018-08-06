@@ -157,14 +157,16 @@ class Sale(PoeDbBase):
     item_api_id = sqlalchemy.Column(
         sqlalchemy.String(255), nullable=False, index=True, unique=True)
     name = sqlalchemy.Column(
-        sqlalchemy.String(255), nullable=False, index=True)
+        sqlalchemy.Unicode(255), nullable=False, index=True)
     is_currency = sqlalchemy.Column(
         sqlalchemy.Boolean, nullable=False, index=True)
     sale_currency = sqlalchemy.Column(
-        sqlalchemy.String(32), nullable=False, index=True)
+        sqlalchemy.Unicode(255), nullable=False, index=True)
     sale_amount = sqlalchemy.Column(sqlalchemy.Float)
     sale_amount_chaos = sqlalchemy.Column(sqlalchemy.Float)
     created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    item_updated_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
     updated_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
@@ -182,6 +184,23 @@ class Sale(PoeDbBase):
             self.id, self.item_id, self.item_api_id,
             self.sale_amount + " " + self.sale_currency,
             self.sale_amount_chaos)
+
+
+class CurrencySummary(PoeDbBase):
+    __tablename__ = 'currency_summary'
+
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    from_currency = sqlalchemy.Column(
+        sqlalchemy.Unicode(255), nullable=False)
+    to_currency = sqlalchemy.Column(
+        sqlalchemy.Unicode(255), nullable=False, index=True)
+    count = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    mean = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+    standard_dev = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+
+    __table_args__ = (
+        sqlalchemy.UniqueConstraint('from_currency', 'to_currency'),)
 
 
 class PoeDb:

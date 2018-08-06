@@ -10,8 +10,10 @@ import sys
 import time
 import logging
 import argparse
-import poefixer
+
 import sqlalchemy
+
+import poefixer
 
 
 DEFAULT_DSN='sqlite:///:memory:'
@@ -125,7 +127,6 @@ class CurrencyFixer:
         query = query.filter(poefixer.Stash.public == True)
         #query = query.filter(sqlalchemy.func.json_contains_path(
         #    poefixer.Item.category, 'all', '$.currency') == 1)
-        #query = query.filter(poefixer.Item.updated_at >= int(last_week))
         if processed_time:
             when = time.strftime(
                 "%Y-%m-%d %H:%M:%S",
@@ -138,6 +139,104 @@ class CurrencyFixer:
             query = query.offset(offset)
 
         return query
+
+    def _update_currency_pricing(self, name, currency, price, sale_time):
+        """
+        Given a currency sale, update our understanding of what currency
+        is now worth, and return the value of the sale in Chaos Orbs.
+        """
+
+        self.db.session.commit()
+
+        query = self.db.session.query(poefixer.CurrencySummary)
+        query = query.filter(poefixer.CurrencySummary.from_currency == name)
+        query = query.filter(poefixer.CurrencySummary.to_currency == currency)
+        do_update = query.one_or_none() is not None
+
+        # This may be DB-specific. Eventually getting it into a
+        # pure-SQLAlchemy form would be good...
+        weight_query = '''
+                SELECT
+                    sale2.id,
+                    GREATEST(1, (
+                        (1.0/GREATEST(1,(:now - sale2.updated_at))) * :unit)) as weight
+                FROM sale as sale2'''
+        weighted_mean_select = sqlalchemy.sql.text('''
+            SELECT
+                SUM(sale.sale_amount * wt.weight)/GREATEST(1,SUM(wt.weight)) as mean,
+                count(*) as rows
+            FROM sale
+                INNER JOIN ('''+weight_query+''') as wt
+                    ON wt.id = sale.id
+            WHERE
+                sale.name = :name AND
+                sale.sale_currency = :currency''')
+        # Our weight unit is how long in seconds we should go before
+        # beginning to decay a value. Decay is currently linear
+        unit = 24*60*60
+        weighted_mean, count_rows = self.db.session.execute(
+            weighted_mean_select, {
+                'name': name,
+                'currency': currency,
+                'now': sale_time,
+                'unit': unit}).fetchone()
+
+        self.logger.debug(
+            "Weighted mean sale of %s for %s %s",
+            name, weighted_mean, currency)
+
+        if weighted_mean is None or not count_rows:
+            return None
+
+        weighted_stddev_select = sqlalchemy.sql.text('''
+            SELECT
+                SQRT(
+                    SUM(wt.weight * POW(sale.sale_amount - :weighted_mean, 2)) /
+                        ((:count_rows * SUM(wt.weight)) / :count_rows)
+                ) as weighted_stddev
+            FROM sale
+                INNER JOIN ('''+weight_query+''') as wt
+                    ON wt.id = sale.id
+            WHERE
+                sale.name = :name AND
+                sale.sale_currency = :currency''')
+        weighted_stddev, = self.db.session.bind.execute(
+            weighted_stddev_select,
+            name=name,
+            currency=currency,
+            count_rows=count_rows,
+            weighted_mean=weighted_mean,
+            now=sale_time,
+            unit=unit).fetchone()
+        self.logger.debug(
+            "Weighted stddev of sale of %s in %s = %s",
+            name, currency, weighted_stddev)
+        if weighted_stddev is None:
+            return None
+
+        if do_update:
+            cmd = sqlalchemy.sql.expression.update(poefixer.CurrencySummary)
+            cmd = cmd.where(
+                poefixer.CurrencySummary.from_currency == name)
+            cmd = cmd.where(
+                poefixer.CurrencySummary.to_currency == currency)
+            add_values = {}
+        else:
+            cmd = sqlalchemy.sql.expression.insert(poefixer.CurrencySummary)
+            add_values = {
+                'from_currency': name,
+                'to_currency': currency}
+        cmd = cmd.values(
+            count=count_rows,
+            mean=weighted_mean,
+            standard_dev=weighted_stddev, **add_values)
+        self.db.session.execute(cmd)
+
+        return self._find_value_of(currency, price)
+
+    def _find_value_of(self, name, price):
+        # TODO find value of currency
+        return None
 
     def _process_sale(self, row):
         is_currency = 'currency' in row.Item.category
@@ -173,51 +272,40 @@ class CurrencyFixer:
                 sale_amount=price,
                 sale_amount_chaos=None,
                 created_at=int(time.time()),
+                item_updated_at=row.Item.updated_at,
                 updated_at=int(time.time()))
         else:
             existing.sale_currency = currency
             existing.sale_amount = price
             existing.sale_amount_chaos = None
+            existing.item_updated_at = row.Item.updated_at
             existing.updated_at = int(time.time())
+
+        if is_currency:
+            # Add it so we can re-calc values...
+            self.db.session.add(existing)
+            existing.sale_amount_chaos = self._update_currency_pricing(
+                name, currency, price, row.Item.updated_at)
 
         self.db.session.add(existing)
 
     def get_last_processed_time(self):
         """
-        Get whichever is older:
-
-            * The update time of the most recent sales record
-            * The update time of the item that record references
-
-        This is necessary because an update to the item may have
-        come in, and so now the sales record is the most autoritative
-        source we have.
-
-        TODO: Should probably copy the item update time into the sales
-        record as a new field so we don't have to guess later.
+        Get the item update time relevant to the most recent sale
+        record.
         """
 
-        query = self.db.session.query(poefixer.Sale, poefixer.Item)
-        query = query.filter(poefixer.Sale.item_id == poefixer.Item.id)
-        query = query.order_by(poefixer.Sale.updated_at.desc()).limit(1)
+        query = self.db.session.query(poefixer.Sale)
+        query = query.order_by(poefixer.Sale.item_updated_at.desc()).limit(1)
         result = query.one_or_none()
         if result:
-            reference_time = min(result.Sale.updated_at, result.Item.updated_at)
+            reference_time = result.item_updated_at
             when = time.strftime(
                 "%Y-%m-%d %H:%M:%S",
                 time.localtime(reference_time))
             self.logger.debug(
                 "Last processed sale for item: %s(%s)",
-                result.Sale.item_id, when)
-            query2 = self.db.session.query(poefixer.Item)
-            query2 = query2.order_by(poefixer.Item.updated_at.desc()).limit(1)
-            result2 = query2.one_or_none()
-            when2 = time.strftime(
-                "%Y-%m-%d %H:%M:%S",
-                time.localtime(result2.updated_at))
-            self.logger.debug(
-                "Last processed item in db: %s(%s)",
-                result2.id, when2)
+                result.item_id, when)
             return reference_time
         return None
 
@@ -230,14 +318,18 @@ class CurrencyFixer:
         todo = True
         block_size = 1000 # Number of rows per block
 
-        try:
-            poefixer.Sale.__table__.create(bind=self.db.session.bind)
-        except sqlalchemy.exc.InternalError as e:
-            if 'already exists' not in str(e):
-                raise
-            self.logger.info("Sale table already exists.")
-        else:
-            self.logger.info("Sale table created.")
+        def create_table(table, name):
+            try:
+                table.__table__.create(bind=self.db.session.bind)
+            except sqlalchemy.exc.InternalError as e:
+                if 'already exists' not in str(e):
+                    raise
+                self.logger.info("%s table already exists.", name)
+            else:
+                self.logger.info("%s table created.", name)
+
+        create_table(poefixer.Sale, "Sale")
+        create_table(poefixer.CurrencySummary, "Currency Summary")
 
         while todo:
             query = self._currency_query(block_size, offset)
@@ -245,7 +337,6 @@ class CurrencyFixer:
             # Stashes are named with a conventional pricing descriptor and
             # items can have a note in the same format. The price of an item
             # is the item price with the stash price as a fallback.
-            prices = {}
             count = 0
             for row in query.all():
                 max_id = row.Item.id
@@ -261,10 +352,12 @@ class CurrencyFixer:
 
 if __name__ == '__main__':
     options = parse_args()
+    echo = False
 
     logger = logging.getLogger('poefixer')
     if options.debug:
         loglevel = 'DEBUG'
+        echo = True
     elif options.verbose:
         loglevel = 'INFO'
     else:
@@ -277,7 +370,8 @@ if __name__ == '__main__':
     logger.addHandler(ch)
     logger.debug("Set logging level: %s" % loglevel)
 
-    db = poefixer.PoeDb(db_connect=options.database_dsn, logger=logger)
+    db = poefixer.PoeDb(
+        db_connect=options.database_dsn, logger=logger, echo=echo)
     db.session.bind.execution_options(stream_results=True)
     do_fixer(db, options.mode, logger)
 

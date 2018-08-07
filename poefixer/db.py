@@ -241,11 +241,9 @@ class PoeDb:
         mark all items associated with this insert as inactive.
         """
 
-        # I really dislike mashing my close-brackets up against my data
-        # pylint: disable=bad-whitespace
         simple_fields = [
             "accountName", "lastCharacterName", "stash", "stashType",
-            "public" ]
+            "public"]
 
         dbstash = self._insert_or_update_row(Stash, stash, simple_fields)
         self.logger.debug("Stash insert complete: %s", dbstash.id)
@@ -269,7 +267,6 @@ class PoeDb:
     def insert_api_item(self, item, stash):
         """Given a PoeApi.Item, insert its data into the Item table"""
 
-        # pylint: disable=bad-whitespace
         simple_fields = [
             "h", "w", "x", "y", "abyssJewel", "artFilename",
             "category", "corrupted", "cosmeticMods", "craftedMods",
@@ -281,9 +278,8 @@ class PoeDb:
             "prophecyDiffText", "prophecyText", "requirements",
             "secDescrText", "shaper", "sockets",
             "stackSize", "support", "talismanTier", "typeLine",
-            "utilityMods", "verified" ]
+            "utilityMods", "verified"]
 
-        # pylint: disable=fixme
         #TODO socketed items...
 
         self._insert_or_update_row(Item, item, simple_fields, stash=stash)

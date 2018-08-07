@@ -96,15 +96,15 @@ class CurrencyFixer:
                         raise
         return (None, None)
 
-    def _currency_query(self, block_size, offset):
+    def _currency_query(self, start, block_size, offset):
         """
-        Get a query from Item (linked to Stash) that are above the
-        last processed time. Return a query that will fetch `block_size`
-        rows starting at `offset`.
+        Get a query from Item (linked to Stash) that have been updated since the
+        last processed time given by `start`.
+
+        Return a query that will fetch `block_size` rows starting at `offset`.
         """
 
         Item = poefixer.Item
-        processed_time = self.get_last_processed_time()
 
         query = self.db.session.query(poefixer.Item, poefixer.Stash)
         query = query.add_columns(
@@ -127,14 +127,13 @@ class CurrencyFixer:
         query = query.filter(poefixer.Stash.public == True)
         #query = query.filter(sqlalchemy.func.json_contains_path(
         #    poefixer.Item.category, 'all', '$.currency') == 1)
-        if processed_time:
-            when = time.strftime(
-                "%Y-%m-%d %H:%M:%S",
-                time.localtime(processed_time))
-            self.logger.info("Starting from %s", when)
-            query = query.filter(poefixer.Item.updated_at >= processed_time)
+
+        if start is not None:
+            query = query.filter(poefixer.Item.updated_at >= start)
+
         # Tried streaming, but the result is just too large for that.
-        query = query.order_by(Item.updated_at).limit(block_size)
+        query = query.order_by(
+            Item.updated_at, Item.created_at, Item.id).limit(block_size)
         if offset:
             query = query.offset(offset)
 
@@ -427,8 +426,14 @@ class CurrencyFixer:
         create_table(poefixer.Sale, "Sale")
         create_table(poefixer.CurrencySummary, "Currency Summary")
 
+        start = self.get_last_processed_time()
+        if start:
+            when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
+            self.logger.info("Starting from %s", when)
+        else:
+            self.logger.info("Starting from beginning of item data.")
         while todo:
-            query = self._currency_query(block_size, offset)
+            query = self._currency_query(start, block_size, offset)
 
             # Stashes are named with a conventional pricing descriptor and
             # items can have a note in the same format. The price of an item

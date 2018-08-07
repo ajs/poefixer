@@ -141,23 +141,26 @@ class CurrencyFixer:
         return query
 
     def _update_currency_pricing(
-            self, name, currency, price, sale_time, is_currency):
+            self, name, currency, league, price, sale_time, is_currency):
         """
         Given a currency sale, update our understanding of what currency
         is now worth, and return the value of the sale in Chaos Orbs.
         """
 
         if is_currency:
-            self._update_currency_summary(name, currency, price, sale_time)
+            self._update_currency_summary(
+                name, currency, league, price, sale_time)
 
         return self._find_value_of(currency, price)
 
-    def _update_currency_summary(self, name, currency, price, sale_time):
+    def _update_currency_summary(
+            self, name, currency, league, price, sale_time):
         """Update the currency summary table with this new price"""
 
         query = self.db.session.query(poefixer.CurrencySummary)
         query = query.filter(poefixer.CurrencySummary.from_currency == name)
         query = query.filter(poefixer.CurrencySummary.to_currency == currency)
+        query = query.filter(poefixer.CurrencySummary.league == league)
         do_update = query.one_or_none() is not None
 
         # This may be DB-specific. Eventually getting it into a
@@ -174,9 +177,11 @@ class CurrencyFixer:
                 SUM(sale.sale_amount * wt.weight)/GREATEST(1,SUM(wt.weight)) as mean,
                 count(*) as rows
             FROM sale
+                INNER JOIN item on sale.item_id = item.id
                 INNER JOIN ('''+weight_query+''') as wt
                     ON wt.id = sale.id
             WHERE
+                item.league = :league AND
                 sale.name = :name AND
                 sale.sale_currency = :currency''')
         # Our weight unit is how long in seconds we should go before
@@ -186,6 +191,7 @@ class CurrencyFixer:
             weighted_mean_select, {
                 'name': name,
                 'currency': currency,
+                'league': league,
                 'now': sale_time,
                 'unit': unit}).fetchone()
 
@@ -203,15 +209,18 @@ class CurrencyFixer:
                         ((:count_rows * SUM(wt.weight)) / :count_rows)
                 ) as weighted_stddev
             FROM sale
+                INNER JOIN item on sale.item_id = item.id
                 INNER JOIN ('''+weight_query+''') as wt
                     ON wt.id = sale.id
             WHERE
+                item.league = :league AND
                 sale.name = :name AND
                 sale.sale_currency = :currency''')
         weighted_stddev, = self.db.session.bind.execute(
             weighted_stddev_select,
             name=name,
             currency=currency,
+            league=league,
             count_rows=count_rows,
             weighted_mean=weighted_mean,
             now=sale_time,
@@ -228,12 +237,15 @@ class CurrencyFixer:
                 poefixer.CurrencySummary.from_currency == name)
             cmd = cmd.where(
                 poefixer.CurrencySummary.to_currency == currency)
+            cmd = cmd.where(
+                poefixer.CurrencySummary.league == league)
             add_values = {}
         else:
             cmd = sqlalchemy.sql.expression.insert(poefixer.CurrencySummary)
             add_values = {
                 'from_currency': name,
-                'to_currency': currency}
+                'to_currency': currency,
+                'league': league}
         cmd = cmd.values(
             count=count_rows,
             mean=weighted_mean,
@@ -360,8 +372,10 @@ class CurrencyFixer:
         self.db.session.add(existing)
         self.db.session.flush()
 
+        league = row.Item.league
+
         amount_chaos = self._update_currency_pricing(
-            name, currency, price, row.Item.updated_at, is_currency)
+            name, currency, league, price, row.Item.updated_at, is_currency)
 
         if amount_chaos is not None:
             self.logger.debug(

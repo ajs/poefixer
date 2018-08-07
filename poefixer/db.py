@@ -108,7 +108,8 @@ class Item(PoeDbBase):
     implicitMods = sqlalchemy.Column(SemiJSON)
     inventoryId = sqlalchemy.Column(sqlalchemy.String(255))
     isRelic = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
-    league = sqlalchemy.Column(sqlalchemy.Unicode(64), nullable=False)
+    league = sqlalchemy.Column(
+        sqlalchemy.Unicode(64), nullable=False, index=True)
     lockedToCharacter = sqlalchemy.Column(sqlalchemy.Boolean, default=False)
     maxStackSize = sqlalchemy.Column(sqlalchemy.Integer)
     name = sqlalchemy.Column(
@@ -197,6 +198,7 @@ class CurrencySummary(PoeDbBase):
         sqlalchemy.Unicode(255), nullable=False)
     to_currency = sqlalchemy.Column(
         sqlalchemy.Unicode(255), nullable=False, index=True)
+    league = sqlalchemy.Column(sqlalchemy.Unicode(64), nullable=False)
     count = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
     # This is the calculate weight based on the age and number of samples
     weight = sqlalchemy.Column(sqlalchemy.Float, nullable=False)

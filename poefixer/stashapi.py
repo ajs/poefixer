@@ -65,6 +65,7 @@ class PoeApiData:
     """
 
     fields = None
+    required_fields = None
 
     def __init_subclass__(cls):
         def data_getter(name):
@@ -80,12 +81,15 @@ class PoeApiData:
         # has been overridden.
         # pylint: disable=not-an-iterable
         for field in cls.fields:
+            if field.startswith('_'):
+                raise KeyError("Invalid field name: %s" % field)
             if not hasattr(cls, field):
                 added += [field]
                 setattr(cls, field, data_getter(field))
 
-    def __init__(self, data):
+    def __init__(self, data, logger=logging):
         self._data = data
+        self._logger = logger
 
     def _repr_fields(self):
         def format_fields():
@@ -106,6 +110,22 @@ class PoeApiData:
         else:
             return "<%s()>" % self.__class__.__name__
 
+    def validate(self):
+        """
+        Basic validation based on self.required_fields if present.
+
+        Subclasses should implement their own validate as apporopriate
+        and call `super().validate()`
+        """
+
+        if self.required_fields:
+            for field in self.required_fields:
+                value = self._data.get(field, None)
+                if value is None:
+                    raise ValueError(
+                        "%s: %s is a required field" % (
+                            self.__class__.__name__, field))
+
 
 class ApiItem(PoeApiData):
     """This is the core PoE item structure"""
@@ -123,6 +143,10 @@ class ApiItem(PoeApiData):
         "socketedItems", "sockets", "stackSize", "support",
         "talismanTier", "typeLine", "utilityMods", "verified", "w", "x",
         "y"]
+
+    required_fields = [
+        "category", "id", "h", "w", "x", "y", "frameType", "icon",
+        "identified", "ilvl", "league", "name", "typeLine", "verified"]
 
     def _clean_markup(self, value):
         return re.sub(self.name_cleaner_re, '', value)
@@ -149,12 +173,20 @@ class ApiStash(PoeApiData):
         'accountName', 'lastCharacterName', 'id', 'stash', 'stashType',
         'items', 'public']
 
+    required_fields = ['id', 'stashType', 'public']
+
     @property
     def items(self):
         """The array of items (as a generator of ApiItem objects)"""
 
         for item in self._data['items']:
-            yield ApiItem(item)
+            api_item = ApiItem(item)
+            try:
+                api_item.validate()
+            except ValueError as e:
+                self._logger.warning("Invalid item: %s", str(e))
+                continue
+            yield api_item
 
 
 class PoeApi:
@@ -226,7 +258,13 @@ class PoeApi:
         """Turn a data blob from the API into a generator of ApiStash objects"""
 
         for stash in data:
-            yield ApiStash(stash)
+            api_stash = ApiStash(stash)
+            try:
+                api_stash.validate()
+            except ValueError as e:
+                self.logger.warning("Invalid stash: %s", str(e))
+                continue
+            yield api_stash
 
     def _get_data(self, next_id=None):
         """Actually read from the API via requests library"""

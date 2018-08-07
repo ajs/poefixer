@@ -198,6 +198,8 @@ class CurrencySummary(PoeDbBase):
     to_currency = sqlalchemy.Column(
         sqlalchemy.Unicode(255), nullable=False, index=True)
     count = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+    # This is the calculate weight based on the age and number of samples
+    weight = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     mean = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     standard_dev = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
 

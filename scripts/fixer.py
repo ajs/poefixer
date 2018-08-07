@@ -170,6 +170,7 @@ class CurrencyFixer:
                 FROM sale as sale2'''
         weighted_mean_select = sqlalchemy.sql.text('''
             SELECT
+                SUM(wt.weight),
                 SUM(sale.sale_amount * wt.weight)/GREATEST(1,SUM(wt.weight)) as mean,
                 count(*) as rows
             FROM sale
@@ -181,7 +182,7 @@ class CurrencyFixer:
         # Our weight unit is how long in seconds we should go before
         # beginning to decay a value. Decay is currently linear
         unit = 24*60*60
-        weighted_mean, count_rows = self.db.session.execute(
+        weight, weighted_mean, count_rows = self.db.session.execute(
             weighted_mean_select, {
                 'name': name,
                 'currency': currency,
@@ -236,6 +237,7 @@ class CurrencyFixer:
         cmd = cmd.values(
             count=count_rows,
             mean=weighted_mean,
+            weight=weight,
             standard_dev=weighted_stddev, **add_values)
         self.db.session.execute(cmd)
 
@@ -245,12 +247,12 @@ class CurrencyFixer:
         named currency, in chaos, multiplied by the numeric `price`.
 
         Our primitive way of doing this for now is to say that the
-        largest number of values wins, presuming that that means
+        highest weighted conversion wins, presuming that that means
         the most stable sample, and we only try to follow the exchange
         to two levels down. Thus, we look for `X -> chaos` and
         `X -> Y -> chaos` and take whichever of those has the
-        highest number of witnessed sales (the number of sales of
-        `X -> Y -> chaos` being `min(count(X->Y), count(Y->chaos))`
+        highest weighted sales (the weight of sales of
+        `X -> Y -> chaos` being `min(weight(X->Y), weight(Y->chaos))`
 
         If all of that fails, we look for transactions going the other
         way (`chaos -> X`). This is less reliable, since it's a
@@ -259,6 +261,7 @@ class CurrencyFixer:
         """
 
         if name == 'Chaos Orb':
+            # The value of a chaos orb is always 1 chaos orb
             return price
 
         from_currency_field = poefixer.CurrencySummary.from_currency
@@ -266,17 +269,17 @@ class CurrencyFixer:
 
         query = self.db.session.query(poefixer.CurrencySummary)
         query = query.filter(from_currency_field == name)
-        query = query.order_by(poefixer.CurrencySummary.count.desc())
+        query = query.order_by(poefixer.CurrencySummary.weight.desc())
         high_score = None
         conversion = None
         for row in query.all():
             target = row.to_currency
             if target == 'Chaos Orb':
-                if high_score and row.count >= high_score:
+                if high_score and row.weight >= high_score:
                     self.logger.info(
                         "Conversion discovered %s -> Chaos = %s",
                         name, row.mean)
-                    high_score = row.count
+                    high_score = row.weight
                     conversion = row.mean
                 break
             query2 = self.db.session.query(poefixer.CurrencySummary)
@@ -284,7 +287,7 @@ class CurrencyFixer:
             query2 = query2.filter(to_currency_field == 'Chaos Orb')
             row2 = query2.one_or_none()
             if row2:
-                score = min(row.count, row2.count)
+                score = min(row.weight, row2.weight)
                 if (not high_score) or score > high_score:
                     high_score = score
                     conversion = row.mean * row2.mean
@@ -301,7 +304,7 @@ class CurrencyFixer:
             query = query.filter(to_currency_field == name)
             row = query.one_or_none()
             if row:
-                return 1.0 / row.mean
+                return (1.0 / row.mean) * price
 
         return None
 
@@ -361,7 +364,7 @@ class CurrencyFixer:
             name, currency, price, row.Item.updated_at, is_currency)
 
         if amount_chaos is not None:
-            self.logger.info(
+            self.logger.debug(
                 "Found chaos value of %s -> %s %s = %s",
                 name, price, currency, amount_chaos)
 
@@ -444,7 +447,8 @@ if __name__ == '__main__':
     logger.setLevel(loglevel)
     ch = logging.StreamHandler()
     ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s:%(name)s:%(levelname)s: %(message)s')
     ch.setFormatter(formatter)
     logger.addHandler(ch)
     logger.debug("Set logging level: %s" % loglevel)

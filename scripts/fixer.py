@@ -28,33 +28,48 @@ def parse_args():
         action='store', default=DEFAULT_DSN,
         help='Database connection string for SQLAlchemy')
     parser.add_argument(
-        'mode',
-        choices=('currency',), # more to come...
-        nargs=1,
-        action='store', help='Mode to run in.')
-    parser.add_argument(
         '-v', '--verbose',
         action='store_true', help='Verbose output')
     parser.add_argument(
         '--debug',
         action='store_true', help='Debugging output')
+    parser.add_argument(
+        'mode',
+        choices=('currency',), # more to come...
+        nargs=1,
+        action='store', help='Mode to run in.')
+    add_currency_arguments(parser)
     return parser.parse_args()
 
-def do_fixer(db, mode, logger):
+def add_currency_arguments(argsparser):
+    """Add arguments relevant only to the currency processing"""
+
+    argsparser.add_argument(
+        '--start-time', action='store', type=int,
+        help='The first Unix timestamp to process')
+
+def do_fixer(db, options, logger):
+    mode = options.mode
     assert len(mode) == 1, "Only one mode allowed"
     mode = mode[0]
     if mode == 'currency':
         # Crunch and update currency values
-        CurrencyFixer(db, logger).do_currency_fixer()
+        start_time = options.start_time
+        CurrencyFixer(
+            db=db,
+            start_time=start_time,
+            logger=logger).do_currency_fixer()
     else:
         raise ValueError("Expected execution mode, got: " + mode)
 
 class CurrencyFixer:
     db = None
+    start_time = None
     logger = None
 
-    def __init__(self, db, logger):
+    def __init__(self, db, start_time, logger):
         self.db = db
+        self.start_time = start_time
         self.logger = logger
 
     def parse_note(self, note):
@@ -481,7 +496,7 @@ class CurrencyFixer:
         create_table(poefixer.Sale, "Sale")
         create_table(poefixer.CurrencySummary, "Currency Summary")
 
-        start = self.get_last_processed_time()
+        start = self.start_time or self.get_last_processed_time()
         if start:
             when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
             self.logger.info("Starting from %s", when)
@@ -530,7 +545,7 @@ if __name__ == '__main__':
     db = poefixer.PoeDb(
         db_connect=options.database_dsn, logger=logger, echo=echo)
     db.session.bind.execution_options(stream_results=True)
-    do_fixer(db, options.mode, logger)
+    do_fixer(db, options, logger)
 
 
 # vim: et:sw=4:sts=4:ai:

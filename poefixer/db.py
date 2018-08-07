@@ -306,8 +306,15 @@ class PoeDb:
         if table == Item:
             row.active = True
 
+        def value(thing, field):
+            datum = getattr(thing, field, None)
+            # Looks like some JSON nulls are not becoming Python Nones
+            if datum is not None and isinstance(datum, str) and datum == 'null':
+                datum = None
+            return datum
+
         for field in simple_fields:
-            setattr(row, field, getattr(thing, field, None))
+            setattr(row, field, value(thing, field))
 
         self.session.add(row)
         return row

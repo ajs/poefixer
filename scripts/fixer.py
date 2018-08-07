@@ -287,7 +287,7 @@ class CurrencyFixer:
             target = row.to_currency
             if target == 'Chaos Orb':
                 if high_score and row.weight >= high_score:
-                    self.logger.info(
+                    self.logger.debug(
                         "Conversion discovered %s -> Chaos = %s",
                         name, row.mean)
                     high_score = row.weight
@@ -302,7 +302,7 @@ class CurrencyFixer:
                 if (not high_score) or score > high_score:
                     high_score = score
                     conversion = row.mean * row2.mean
-                    self.logger.info(
+                    self.logger.debug(
                         "Conversion discovered %s -> %s (%s) -> Chaos (%s) = %s",
                         name, row2.from_currency, row.mean,
                         row2.mean, conversion)

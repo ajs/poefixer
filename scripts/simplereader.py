@@ -21,13 +21,16 @@ def parse_args():
         '-d', '--database-dsn', action='store',
         default=DEFAULT_DSN,
         help='Database connection string for SQLAlchemy')
+    parser.add_argument(
+        'next_id', action='store', nargs='?',
+        help='The next id to start at')
     return parser.parse_args()
 
-def pull_data(database_dsn, logger):
+def pull_data(database_dsn, next_id, logger):
     """Grab data from the API and insert into the DB"""
 
     db = poefixer.PoeDb(db_connect=database_dsn, logger=logger)
-    api = poefixer.PoeApi(logger=logger)
+    api = poefixer.PoeApi(logger=logger, next_id=next_id)
 
     db.create_database()
 
@@ -54,7 +57,10 @@ if __name__ == '__main__':
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    pull_data(database_dsn=options.database_dsn, logger=logger)
+    pull_data(
+        database_dsn=options.database_dsn,
+        next_id=options.next_id,
+        logger=logger)
 
 
 # vim: et:sw=4:sts=4:ai:

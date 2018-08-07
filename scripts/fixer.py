@@ -150,7 +150,7 @@ class CurrencyFixer:
             self._update_currency_summary(
                 name, currency, league, price, sale_time)
 
-        return self._find_value_of(currency, price)
+        return self._find_value_of(currency, league, price)
 
     def _get_mean_and_std(
             self,
@@ -302,10 +302,11 @@ class CurrencyFixer:
             standard_dev=weighted_stddev, **add_values)
         self.db.session.execute(cmd)
 
-    def _find_value_of(self, name, price):
+    def _find_value_of(self, name, league, price):
         """
         Return the best current understanding of the value of the
-        named currency, in chaos, multiplied by the numeric `price`.
+        named currency, in chaos, in the given `league`,
+        multiplied by the numeric `price`.
 
         Our primitive way of doing this for now is to say that the
         highest weighted conversion wins, presuming that that means
@@ -327,9 +328,11 @@ class CurrencyFixer:
 
         from_currency_field = poefixer.CurrencySummary.from_currency
         to_currency_field = poefixer.CurrencySummary.to_currency
+        league_field = poefixer.CurrencySummary.league
 
         query = self.db.session.query(poefixer.CurrencySummary)
         query = query.filter(from_currency_field == name)
+        query = query.filter(league_field == league)
         query = query.order_by(poefixer.CurrencySummary.weight.desc())
         high_score = None
         conversion = None
@@ -346,6 +349,7 @@ class CurrencyFixer:
             query2 = self.db.session.query(poefixer.CurrencySummary)
             query2 = query2.filter(from_currency_field == target)
             query2 = query2.filter(to_currency_field == 'Chaos Orb')
+            query2 = query2.filter(league_field == league)
             row2 = query2.one_or_none()
             if row2:
                 score = min(row.weight, row2.weight)
@@ -363,6 +367,7 @@ class CurrencyFixer:
             query = self.db.session.query(poefixer.CurrencySummary)
             query = query.filter(from_currency_field == 'Chaos Orb')
             query = query.filter(to_currency_field == name)
+            query = query.filter(league_field == league)
             row = query.one_or_none()
             if row:
                 return (1.0 / row.mean) * price

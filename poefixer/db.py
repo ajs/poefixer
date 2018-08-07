@@ -206,7 +206,7 @@ class CurrencySummary(PoeDbBase):
     standard_dev = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
 
     __table_args__ = (
-        sqlalchemy.UniqueConstraint('from_currency', 'to_currency'),)
+        sqlalchemy.UniqueConstraint('from_currency', 'to_currency', 'league'),)
 
 
 class PoeDb:

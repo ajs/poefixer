@@ -212,6 +212,9 @@ class PoeApi:
     * `rate` - The number of seconds (float) to wait between requests.
                Defaults to 1.1. Changing this can result in server-side rate-
                limiting.
+    * `slow` - Be extra careful about issuing requests too fast by updating the
+               last request counter AFTER a request completes. Otherwise, the
+               counter is only updated BEFORE each request.
     * `api_root` - The PoE stash API root. Generally don't change this unless
                    you have a mock server you use for testing.
     """
@@ -219,12 +222,17 @@ class PoeApi:
     api_root = POE_STASH_API_ENDPOINT
     next_id = None
     rate = 1.1
+    slow = False
 
-    def __init__(self, next_id=None, rate=None, api_root=None, logger=logging):
+    def __init__(
+            self,
+            next_id=None, rate=None, slow=None, api_root=None, logger=logging):
         self.logger = logger
         self.next_id = next_id
         if rate is not None:
             self.rate = datetime.timedelta(seconds=rate)
+        if slow is not None:
+            self.slow = slow
         if api_root is not None:
             self.api_root = api_root
         self.last_time = None
@@ -250,7 +258,7 @@ class PoeApi:
         """Return the next stash generator"""
 
         self.rate_wait()
-        data, self.next_id = self._get_data(next_id=self.next_id)
+        data, self.next_id = self._get_data(next_id=self.next_id, slow=self.slow)
         return self.stash_generator(data)
 
     @staticmethod
@@ -266,7 +274,7 @@ class PoeApi:
                 continue
             yield api_stash
 
-    def _get_data(self, next_id=None):
+    def _get_data(self, next_id=None, slow=False):
         """Actually read from the API via requests library"""
 
         url = self.api_root
@@ -276,7 +284,8 @@ class PoeApi:
         else:
             self.logger.info("Requesting first stash set")
         req = self.rq_context.get(url)
-        self.set_last_time()
+        if slow:
+            self.set_last_time()
         req.raise_for_status()
         # rapidjson doesn't tell python what its methods are...
         # pylint: disable=c-extension-no-member

@@ -329,7 +329,7 @@ class CurrencyFixer:
         if is_currency:
             name = row.Item.typeLine
         else:
-            name = row.Item.name + " " + row.Item.typeLine
+            name = (row.Item.name + " " + row.Item.typeLine).strip()
         pricing = row.Item.note
         stash_pricing = row.Stash.stash
         stash_price, stash_currency = self.parse_note(stash_pricing)

@@ -166,6 +166,8 @@ class Sale(PoeDbBase):
     sale_amount_chaos = sqlalchemy.Column(sqlalchemy.Float)
     created_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
+    # The updated_at field from Item, as of the time that this sale
+    # record was last updated.
     item_updated_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
     updated_at = sqlalchemy.Column(

@@ -140,13 +140,20 @@ class CurrencyFixer:
 
         return query
 
-    def _update_currency_pricing(self, name, currency, price, sale_time):
+    def _update_currency_pricing(
+            self, name, currency, price, sale_time, is_currency):
         """
         Given a currency sale, update our understanding of what currency
         is now worth, and return the value of the sale in Chaos Orbs.
         """
 
-        self.db.session.commit()
+        if is_currency:
+            self._update_currency_summary(name, currency, price, sale_time)
+
+        return self._find_value_of(currency, price)
+
+    def _update_currency_summary(self, name, currency, price, sale_time):
+        """Update the currency summary table with this new price"""
 
         query = self.db.session.query(poefixer.CurrencySummary)
         query = query.filter(poefixer.CurrencySummary.from_currency == name)
@@ -232,13 +239,78 @@ class CurrencyFixer:
             standard_dev=weighted_stddev, **add_values)
         self.db.session.execute(cmd)
 
-        return self._find_value_of(currency, price)
-
     def _find_value_of(self, name, price):
-        # TODO find value of currency
+        """
+        Return the best current understanding of the value of the
+        named currency, in chaos, multiplied by the numeric `price`.
+
+        Our primitive way of doing this for now is to say that the
+        largest number of values wins, presuming that that means
+        the most stable sample, and we only try to follow the exchange
+        to two levels down. Thus, we look for `X -> chaos` and
+        `X -> Y -> chaos` and take whichever of those has the
+        highest number of witnessed sales (the number of sales of
+        `X -> Y -> chaos` being `min(count(X->Y), count(Y->chaos))`
+
+        If all of that fails, we look for transactions going the other
+        way (`chaos -> X`). This is less reliable, since it's a
+        supply vs. demand side order, but if it's all we have, we
+        roll with it.
+        """
+
+        if name == 'Chaos Orb':
+            return price
+
+        from_currency_field = poefixer.CurrencySummary.from_currency
+        to_currency_field = poefixer.CurrencySummary.to_currency
+
+        query = self.db.session.query(poefixer.CurrencySummary)
+        query = query.filter(from_currency_field == name)
+        query = query.order_by(poefixer.CurrencySummary.count.desc())
+        high_score = None
+        conversion = None
+        for row in query.all():
+            target = row.to_currency
+            if target == 'Chaos Orb':
+                if high_score and row.count >= high_score:
+                    self.logger.info(
+                        "Conversion discovered %s -> Chaos = %s",
+                        name, row.mean)
+                    high_score = row.count
+                    conversion = row.mean
+                break
+            query2 = self.db.session.query(poefixer.CurrencySummary)
+            query2 = query2.filter(from_currency_field == target)
+            query2 = query2.filter(to_currency_field == 'Chaos Orb')
+            row2 = query2.one_or_none()
+            if row2:
+                score = min(row.count, row2.count)
+                if (not high_score) or score > high_score:
+                    high_score = score
+                    conversion = row.mean * row2.mean
+                    self.logger.info(
+                        "Conversion discovered %s -> %s (%s) -> Chaos (%s) = %s",
+                        name, row2.from_currency, row.mean,
+                        row2.mean, conversion)
+
+        if high_score:
+            return conversion * price
+        else:
+            query = self.db.session.query(poefixer.CurrencySummary)
+            query = query.filter(from_currency_field == 'Chaos Orb')
+            query = query.filter(to_currency_field == name)
+            row = query.one_or_none()
+            if row:
+                return 1.0 / row.mean
+
         return None
 
     def _process_sale(self, row):
+        if not (
+                (row.Item.note and row.Item.note.startswith('~')) or
+                row.Stash.stash.startswith('~')):
+            self.logger.debug("No sale")
+            return
         is_currency = 'currency' in row.Item.category
         if is_currency:
             name = row.Item.typeLine
@@ -281,13 +353,20 @@ class CurrencyFixer:
             existing.item_updated_at = row.Item.updated_at
             existing.updated_at = int(time.time())
 
-        if is_currency:
-            # Add it so we can re-calc values...
-            self.db.session.add(existing)
-            existing.sale_amount_chaos = self._update_currency_pricing(
-                name, currency, price, row.Item.updated_at)
-
+        # Add it so we can re-calc values...
         self.db.session.add(existing)
+        self.db.session.flush()
+
+        amount_chaos = self._update_currency_pricing(
+            name, currency, price, row.Item.updated_at, is_currency)
+
+        if amount_chaos is not None:
+            self.logger.info(
+                "Found chaos value of %s -> %s %s = %s",
+                name, price, currency, amount_chaos)
+
+            existing.sale_amount_chaos = amount_chaos
+            self.db.session.merge(existing)
 
     def get_last_processed_time(self):
         """

@@ -152,15 +152,22 @@ class CurrencyFixer:
 
         return self._find_value_of(currency, price)
 
-    def _update_currency_summary(
-            self, name, currency, league, price, sale_time):
-        """Update the currency summary table with this new price"""
+    def _get_mean_and_std(
+            self,
+            name, currency, league, sale_time,
+            restrict=False,
+            mean=None,
+            stddev=None):
+        """
+        For a given currency sale, get the weighted mean and standard deviation.
 
-        query = self.db.session.query(poefixer.CurrencySummary)
-        query = query.filter(poefixer.CurrencySummary.from_currency == name)
-        query = query.filter(poefixer.CurrencySummary.to_currency == currency)
-        query = query.filter(poefixer.CurrencySummary.league == league)
-        do_update = query.one_or_none() is not None
+        Full returned value list is:
+
+        * mean
+        * standard deviation
+        * total of all weights used
+        * count of considered rows
+        """
 
         # This may be DB-specific. Eventually getting it into a
         # pure-SQLAlchemy form would be good...
@@ -170,6 +177,18 @@ class CurrencyFixer:
                     GREATEST(1, (
                         (1.0/GREATEST(1,(:now - sale2.updated_at))) * :unit)) as weight
                 FROM sale as sale2'''
+
+        if restrict:
+            restrict_clause = '''ABS(%s.sale_amount - :mean) / 2.0 < :stddev'''
+            weight_query += ' WHERE ' + (restrict_clause %  'sale2')
+            restrict_clause = ' AND ' + (restrict_clause % 'sale')
+            restrict_args = {
+                'mean': mean,
+                'stddev': stddev}
+        else:
+            restrict_clause = ''
+            restrict_args = {}
+
         weighted_mean_select = sqlalchemy.sql.text('''
             SELECT
                 SUM(wt.weight),
@@ -182,7 +201,7 @@ class CurrencyFixer:
             WHERE
                 item.league = :league AND
                 sale.name = :name AND
-                sale.sale_currency = :currency''')
+                sale.sale_currency = :currency''' + restrict_clause)
         # Our weight unit is how long in seconds we should go before
         # beginning to decay a value. Decay is currently linear
         unit = 24*60*60
@@ -192,7 +211,8 @@ class CurrencyFixer:
                 'currency': currency,
                 'league': league,
                 'now': sale_time,
-                'unit': unit}).fetchone()
+                'unit': unit,
+                **restrict_args}).fetchone()
 
         self.logger.debug(
             "Weighted mean sale of %s for %s %s",
@@ -214,21 +234,51 @@ class CurrencyFixer:
             WHERE
                 item.league = :league AND
                 sale.name = :name AND
-                sale.sale_currency = :currency''')
-        weighted_stddev, = self.db.session.bind.execute(
-            weighted_stddev_select,
-            name=name,
-            currency=currency,
-            league=league,
-            count_rows=count_rows,
-            weighted_mean=weighted_mean,
-            now=sale_time,
-            unit=unit).fetchone()
+                sale.sale_currency = :currency''' + restrict_clause)
+        weighted_stddev, = self.db.session.execute(
+            weighted_stddev_select, {
+                'name': name,
+                'currency': currency,
+                'league': league,
+                'count_rows': count_rows,
+                'weighted_mean': weighted_mean,
+                'now': sale_time,
+                'unit': unit,
+                **restrict_args}).fetchone()
+
+        return (weighted_mean, weighted_stddev, weight, count_rows)
+
+    def _update_currency_summary(
+            self, name, currency, league, price, sale_time):
+        """Update the currency summary table with this new price"""
+
+        query = self.db.session.query(poefixer.CurrencySummary)
+        query = query.filter(poefixer.CurrencySummary.from_currency == name)
+        query = query.filter(poefixer.CurrencySummary.to_currency == currency)
+        query = query.filter(poefixer.CurrencySummary.league == league)
+        do_update = query.one_or_none() is not None
+
+        weighted_mean, weighted_stddev, weight, count = self._get_mean_and_std(
+            name, currency, league, sale_time)
         self.logger.debug(
             "Weighted stddev of sale of %s in %s = %s",
             name, currency, weighted_stddev)
         if weighted_stddev is None:
             return None
+        elif count > 3 and weighted_stddev > weighted_mean/2.0:
+            self.logger.info(
+                "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
+                name, currency, weighted_stddev, weighted_mean)
+            weighted_mean, weighted_stddev, weight, count2 = self._get_mean_and_std(
+                name, currency, league, sale_time,
+                restrict=True,
+                mean=weighted_mean,
+                stddev=weighted_stddev)
+            self.logger.info(
+                "Recalibration ignored %s rows, final stddev=%s, mean=%s",
+                count - count2, weighted_stddev, weighted_mean)
+            count = count2
+
 
         if do_update:
             cmd = sqlalchemy.sql.expression.update(poefixer.CurrencySummary)
@@ -246,7 +296,7 @@ class CurrencyFixer:
                 'to_currency': currency,
                 'league': league}
         cmd = cmd.values(
-            count=count_rows,
+            count=count,
             mean=weighted_mean,
             weight=weight,
             standard_dev=weighted_stddev, **add_values)

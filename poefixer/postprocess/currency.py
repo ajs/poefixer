@@ -1,7 +1,9 @@
-#!/usr/bin/env python3
-
 """
-Perform analysis on the PoE pricing database for various purposes
+Back-end for currency price postprocessing.
+
+The CurrencyPostprocessor class knows everything about tranforming
+data in the stash and item tables as seen from the API into our
+sales data and currency summaries.
 """
 
 
@@ -19,6 +21,13 @@ import poefixer
 PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+) (\w+)')
 
 class CurrencyPostprocessor:
+    """
+    Take the sales and stash tables that represent very nearly as-is
+    data from the API and start to crunch it down into some aggregates
+    that represent the economy. This code is primarily responsible
+    for tending the sale and currency_summary tables.
+    """
+
     db = None
     start_time = None
     logger = None
@@ -29,6 +38,15 @@ class CurrencyPostprocessor:
         self.logger = logger
 
     def parse_note(self, note):
+        """
+        The 'note' is a user-edited field that sets pricing on an item or
+        whole stash tab.
+
+        Our goal is to parse out the sale price, if any, and return it or
+        to returm None if there was no valid price.
+        """
+
+        # Currencies are abbreviated in notes.
         currencies = {
             "alch": "Orb of Alchemy",
             "alt": "Orb of Alteration",
@@ -59,6 +77,10 @@ class CurrencyPostprocessor:
                         amt = float(amt)
                     if  currency in currencies:
                         return (amt, currencies[currency])
+                    elif currency:
+                        self.logger.warning(
+                            "Currency note: %r has unknown currency abbrev %s",
+                            note, currency)
                 except ValueError as e:
                     # If float() fails it raises ValueError
                     if 'float' in str(e):
@@ -240,7 +262,7 @@ class CurrencyPostprocessor:
         if weighted_stddev is None:
             return None
         elif count > 3 and weighted_stddev > weighted_mean/2.0:
-            self.logger.info(
+            self.logger.debug(
                 "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
                 name, currency, weighted_stddev, weighted_mean)
             weighted_mean, weighted_stddev, weight, count2 = self._get_mean_and_std(
@@ -248,7 +270,7 @@ class CurrencyPostprocessor:
                 restrict=True,
                 mean=weighted_mean,
                 stddev=weighted_stddev)
-            self.logger.info(
+            self.logger.debug(
                 "Recalibration ignored %s rows, final stddev=%s, mean=%s",
                 count - count2, weighted_stddev, weighted_mean)
             count = count2
@@ -448,7 +470,7 @@ class CurrencyPostprocessor:
             except sqlalchemy.exc.InternalError as e:
                 if 'already exists' not in str(e):
                     raise
-                self.logger.info("%s table already exists.", name)
+                self.logger.debug("%s table already exists.", name)
             else:
                 self.logger.info("%s table created.", name)
 
@@ -472,7 +494,7 @@ class CurrencyPostprocessor:
                 max_id = row.Item.id
                 count += 1
                 self.logger.debug("Row in %s" % row.Item.id)
-                if count % 100 == 0:
+                if count % 1000 == 0:
                     self.logger.info(
                         "%s rows in... (%s)",
                         count + offset, row.Item.updated_at)

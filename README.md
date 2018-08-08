@@ -30,7 +30,7 @@ To load data:
   the end of the URL. Also, mysql has many interface libraries, so
   you need to specify which to use. I recommend `mysql+pymysql` as
   the `db-type` at the front of the URL.
-* Run the data loader as a trial run: `scripts/simplereader.py -d <db-url>`
+* Run the data loader as a trial run: `scripts/sample_api_reader.py -d <db-url>`
 * If that works, kill it and start it up again from the most recent ID.
   You can find that ID at: https://poe.ninja/stats
 * Once that is running and pulling down data into your database, you will
@@ -44,7 +44,7 @@ To load data:
 These programs provide a basic database structure and will auto-instantiate
 tables that they need. However, they are also too slow to keep up with the
 entire output of the community! You would have to create a parallelized
-version of the `simplereader.py` script and the currency processor for
+version of the `sample_api_reader.py` script and the currency processor for
 that, and that's beyond the scope of this project, mostly because doing
 so without being whielisted by GGG would hit their auto-rate-limiting
 thresholds, and I'm not yet a big enough fish to get on that list.

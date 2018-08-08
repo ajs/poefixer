@@ -5,7 +5,9 @@ Trivial API reader/writer for testing
 """
 
 
+import json
 import logging
+import requests
 import argparse
 import poefixer
 
@@ -22,12 +24,23 @@ def parse_args():
         default=DEFAULT_DSN,
         help='Database connection string for SQLAlchemy')
     parser.add_argument(
+        '--most-recent', action='store_true',
+        help='Consult poe.ninja to find latest ID')
+    parser.add_argument(
         'next_id', action='store', nargs='?',
         help='The next id to start at')
     return parser.parse_args()
 
-def pull_data(database_dsn, next_id, logger):
+def pull_data(database_dsn, next_id, most_recent, logger):
     """Grab data from the API and insert into the DB"""
+
+    if most_recent:
+        if next_id:
+            raise ValueError("Cannot provide next_id with most-recent flag")
+        result = requests.get('http://poe.ninja/api/Data/GetStats')
+        result.raise_for_status()
+        data = json.loads(result.text)
+        next_id = data['next_change_id']
 
     db = poefixer.PoeDb(db_connect=database_dsn, logger=logger)
     api = poefixer.PoeApi(logger=logger, next_id=next_id)
@@ -60,6 +73,7 @@ if __name__ == '__main__':
     pull_data(
         database_dsn=options.database_dsn,
         next_id=options.next_id,
+        most_recent=options.most_recent,
         logger=logger)
 
 

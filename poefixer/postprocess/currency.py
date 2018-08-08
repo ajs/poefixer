@@ -16,9 +16,9 @@ import argparse
 import sqlalchemy
 
 import poefixer
+from .currency_names import \
+    PRICE_RE, OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
 
-
-PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+) (\w+)')
 
 class CurrencyPostprocessor:
     """
@@ -46,25 +46,6 @@ class CurrencyPostprocessor:
         to returm None if there was no valid price.
         """
 
-        # Currencies are abbreviated in notes.
-        currencies = {
-            "alch": "Orb of Alchemy",
-            "alt": "Orb of Alteration",
-            "blessed": "Blessed Orb",
-            "chance": "Orb of Chance",
-            "chaos": "Chaos Orb",
-            "chisel": "Cartographer's Chisel",
-            "chrom": "Chromatic Orb",
-            "divine": "Divine Orb",
-            "exa": "Exalted Orb",
-            "fuse": "Orb of Fusing",
-            "gcp": "Gemcutter's Prism",
-            "jew": "Jeweller's Orb",
-            "regal": "Regal Orb",
-            "regret": "Orb of Regret",
-            "scour": "Orb of Scouring",
-            "vaal": "Vaal Orb"}
-
         if note is not None:
             match = PRICE_RE.search(note)
             if match:
@@ -75,8 +56,10 @@ class CurrencyPostprocessor:
                         amt = float(num) / float(den)
                     else:
                         amt = float(amt)
-                    if  currency in currencies:
-                        return (amt, currencies[currency])
+                    if  currency in OFFICIAL_CURRENCIES:
+                        return (amt, OFFICIAL_CURRENCIES[currency])
+                    elif  currency in UNOFFICIAL_CURRENCIES:
+                        return (amt, UNOFFICIAL_CURRENCIES[currency])
                     elif currency:
                         self.logger.warning(
                             "Currency note: %r has unknown currency abbrev %s",

@@ -188,6 +188,10 @@ class ApiStash(PoeApiData):
                 continue
             yield api_item
 
+    @property
+    def api_item_count(self):
+        return len(self._data['items'])
+
 
 class PoeApi:
     """
@@ -290,7 +294,6 @@ class PoeApi:
         # rapidjson doesn't tell python what its methods are...
         # pylint: disable=c-extension-no-member
         data = json.loads(req.text)
-        self.logger.debug("Stash data loaded from API")
         if 'next_change_id' not in data:
             raise KeyError('next_change_id required field not present in response')
         return (data['stashes'], data['next_change_id'])

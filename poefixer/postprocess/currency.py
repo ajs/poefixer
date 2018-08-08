@@ -88,6 +88,7 @@ class CurrencyPostprocessor:
             poefixer.Item.name,
             poefixer.Stash.public)
         query = query.filter(poefixer.Stash.id == poefixer.Item.stash_id)
+        query = query.filter(poefixer.Item.active == True)
         query = query.filter(sqlalchemy.or_(
             sqlalchemy.and_(
                 poefixer.Item.note != None,
@@ -170,6 +171,7 @@ class CurrencyPostprocessor:
                 INNER JOIN ('''+weight_query+''') as wt
                     ON wt.id = sale.id
             WHERE
+                item.active = 1 AND
                 item.league = :league AND
                 sale.name = :name AND
                 sale.sale_currency = :currency''' + restrict_clause)
@@ -203,6 +205,7 @@ class CurrencyPostprocessor:
                 INNER JOIN ('''+weight_query+''') as wt
                     ON wt.id = sale.id
             WHERE
+                item.active = 1 AND
                 item.league = :league AND
                 sale.name = :name AND
                 sale.sale_currency = :currency''' + restrict_clause)

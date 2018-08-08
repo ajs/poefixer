@@ -231,6 +231,22 @@ class PoeDb:
     _engine = None
     _session_maker = None
 
+    stash_simple_fields = [
+        "accountName", "lastCharacterName", "stash", "stashType",
+        "public"]
+    item_simple_fields = [
+        "h", "w", "x", "y", "abyssJewel", "artFilename",
+        "category", "corrupted", "cosmeticMods", "craftedMods",
+        "descrText", "duplicated", "elder", "enchantMods",
+        "explicitMods", "flavourText", "frameType", "icon",
+        "identified", "ilvl", "implicitMods", "inventoryId",
+        "isRelic", "league", "lockedToCharacter", "maxStackSize",
+        "name", "nextLevelRequirements", "note", "properties",
+        "prophecyDiffText", "prophecyText", "requirements",
+        "secDescrText", "shaper", "sockets",
+        "stackSize", "support", "talismanTier", "typeLine",
+        "utilityMods", "verified"]
+
     def insert_api_stash(self, stash, with_items=False, keep_items=False):
         """
         Given a PoeApi.ApiStash, insert its data into the Item table
@@ -241,20 +257,21 @@ class PoeDb:
         mark all items associated with this insert as inactive.
         """
 
-        simple_fields = [
-            "accountName", "lastCharacterName", "stash", "stashType",
-            "public"]
-
-        dbstash = self._insert_or_update_row(Stash, stash, simple_fields)
-        self.logger.debug("Stash insert complete: %s", dbstash.id)
+        dbstash = self._insert_or_update_row(
+            Stash, stash, self.stash_simple_fields)
 
         if with_items:
-            if not keep_items:
-                self._invalidate_stash_items(dbstash)
+            # For now, it seems stashes are immutable anyway
+            #if not keep_items:
+            #    self._invalidate_stash_items(dbstash)
             self.session.flush()
             self.session.refresh(dbstash)
+            self.logger.info(
+                "Injecting %s items for stash: %s",
+                stash.api_item_count, stash.id)
             for item in stash.items:
-                self.insert_api_item(item, dbstash)
+                self._insert_or_update_row(
+                    Item, item, self.item_simple_fields, stash=dbstash)
 
     def _invalidate_stash_items(self, dbstash):
         """Mark all items in this stash as inactive, pending update"""
@@ -264,40 +281,18 @@ class PoeDb:
         update = update.values(active=False)
         self.session.execute(update)
 
-    def insert_api_item(self, item, stash):
-        """Given a PoeApi.Item, insert its data into the Item table"""
-
-        simple_fields = [
-            "h", "w", "x", "y", "abyssJewel", "artFilename",
-            "category", "corrupted", "cosmeticMods", "craftedMods",
-            "descrText", "duplicated", "elder", "enchantMods",
-            "explicitMods", "flavourText", "frameType", "icon",
-            "identified", "ilvl", "implicitMods", "inventoryId",
-            "isRelic", "league", "lockedToCharacter", "maxStackSize",
-            "name", "nextLevelRequirements", "note", "properties",
-            "prophecyDiffText", "prophecyText", "requirements",
-            "secDescrText", "shaper", "sockets",
-            "stackSize", "support", "talismanTier", "typeLine",
-            "utilityMods", "verified"]
-
-        #TODO socketed items...
-
-        self._insert_or_update_row(Item, item, simple_fields, stash=stash)
-
     def _insert_or_update_row(self, table, thing, simple_fields, stash=None):
         now = int(time.time())
         query = self.session.query(table)
         if thing.id:
-            existing = query.filter(table.api_id == thing.id).first()
+            existing = query.filter(table.api_id == thing.id).one_or_none()
         else:
             existing = None
         if existing:
             row = existing
-            self.logger.debug("UPDATED ITEM: %r // %r", thing, existing)
         else:
             row = table()
             row.created_at = now
-            self.logger.debug("NEW ITEM: %r", thing)
 
         row.api_id = thing.id
         row.updated_at = now
@@ -306,15 +301,8 @@ class PoeDb:
         if table == Item:
             row.active = True
 
-        def value(thing, field):
-            datum = getattr(thing, field, None)
-            # Looks like some JSON nulls are not becoming Python Nones
-            if datum is not None and isinstance(datum, str) and datum == 'null':
-                datum = None
-            return datum
-
         for field in simple_fields:
-            setattr(row, field, value(thing, field))
+            setattr(row, field, getattr(thing, field, None))
 
         self.session.add(row)
         return row

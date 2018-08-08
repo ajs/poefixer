@@ -34,10 +34,12 @@ OFFICIAL_CURRENCIES = {
 # ones in use. See http://currency.poe.trade/tags which I processed
 # using the script from scripts/currency_abbreviations.pl
 # Then we've added a few seen in the wild (first section)
+# Note that some of these appear in the official list, above as well
 UNOFFICIAL_CURRENCIES = {
     # Seen in the wild
     "c": "Chaos Orb",
-    "C": "Chaos Orb",
+    "p": "Perandus Coin",
+    "pc": "Perandus Coin",
     "mirror": "Mirror of Kalandra",
     "eshs-breachstone": "Esh's Breachstone",
     "esh-breachstone": "Esh's Breachstone",
@@ -49,6 +51,12 @@ UNOFFICIAL_CURRENCIES = {
     "tul-breachstone": "Tul's Breachstone",
     "uul-netols-breachstone": "Uul-Netol's Breachstone",
     "uul-netol-breachstone": "Uul-Netol's Breachstone",
+    "minotaur": "Fragment of the Minotaur",
+    "chimera": "Fragment of the Chimera",
+    "phoenix": "Fragment of the Phoenix",
+    "hydra": "Fragment of the Hydra",
+    "wisdom": "Scroll of Wisdom",
+    "the-samurais-eye": "The Samurai's Eye",
     # From http://currency.poe.trade/tags, see above
     "alt": "Orb of Alteration",
     "fuse": "Orb of Fusing",
@@ -754,3 +762,5 @@ UNOFFICIAL_CURRENCIES = {
     "the-witch": "The Witch",
     "three-voices": "Three Voices",
 }
+
+# vim: et:sw=4:sts=4:ai:

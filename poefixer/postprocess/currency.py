@@ -31,11 +31,43 @@ class CurrencyPostprocessor:
     db = None
     start_time = None
     logger = None
+    actual_currencies = {}
 
     def __init__(self, db, start_time, logger):
         self.db = db
         self.start_time = start_time
         self.logger = logger
+
+        self.actual_currencies = self.get_actual_currencies()
+
+    def get_actual_currencies(self):
+        """Get the currencies in the DB and create abbreviation mappings"""
+
+        def get_full_names():
+            query = self.db.session.query(poefixer.CurrencySummary)
+            query = query.add_columns(poefixer.CurrencySummary.from_currency)
+            query = query.distinct()
+
+            for row in query.all():
+                yield row.from_currency
+
+        def dashed(name):
+            return name.replace(' ', '-')
+
+        def dashed_clean(name):
+            return dashed(name).replace("'", "")
+
+        full_names = list(get_full_names())
+        low = lambda name: name.lower()
+        mapping = dict(((low(name), name) for name in full_names))
+        mapping.update(
+            dict(((dashed(low(name)), name) for name in full_names)))
+        mapping.update(
+            dict(((dashed_clean(low(name)), name) for name in full_names)))
+
+        self.logger.debug("Mapping of currencies: %r", mapping)
+
+        return mapping
 
     def parse_note(self, note):
         """
@@ -51,15 +83,18 @@ class CurrencyPostprocessor:
             if match:
                 try:
                     (sale_type, amt, currency) = match.groups()
+                    low_cur = currency.lower()
                     if '/' in amt:
                         num, den = amt.split('/', 1)
                         amt = float(num) / float(den)
                     else:
                         amt = float(amt)
-                    if  currency in OFFICIAL_CURRENCIES:
-                        return (amt, OFFICIAL_CURRENCIES[currency])
-                    elif  currency in UNOFFICIAL_CURRENCIES:
-                        return (amt, UNOFFICIAL_CURRENCIES[currency])
+                    if  low_cur in OFFICIAL_CURRENCIES:
+                        return (amt, OFFICIAL_CURRENCIES[low_cur])
+                    elif low_cur in UNOFFICIAL_CURRENCIES:
+                        return (amt, UNOFFICIAL_CURRENCIES[low_cur])
+                    elif low_cur in self.actual_currencies:
+                        return (amt, self.actual_currencies[low_cur])
                     elif currency:
                         self.logger.warning(
                             "Currency note: %r has unknown currency abbrev %s",

@@ -47,6 +47,9 @@ def add_currency_arguments(argsparser):
     argsparser.add_argument(
         '--start-time', action='store', type=int,
         help='The first Unix timestamp to process')
+    argsparser.add_argument(
+        '--continuous', action='store_true',
+        help='Once processing is complete, start over')
 
 def do_fixer(db, options, logger):
     mode = options.mode
@@ -55,9 +58,11 @@ def do_fixer(db, options, logger):
     if mode == 'currency':
         # Crunch and update currency values
         start_time = options.start_time
+        continuous = options.continuous
         currency.CurrencyPostprocessor(
             db=db,
             start_time=start_time,
+            continuous=continuous,
             logger=logger).do_currency_postprocessor()
     else:
         raise ValueError("Expected execution mode, got: " + mode)

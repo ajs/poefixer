@@ -37,8 +37,9 @@ To load data:
   also need a currency processor running. This takes the raw data and
   creates the currency summary and sales tables. Run it like so:
   `scripts/fixer.py -d <db-url> currency --verbose`
-* The currency script will exit when it's up-to-date, so you want to
-  re-run it either on a schedule or just every time it exits cleanly.
+* The currency script will exit when it's up-to-date
+  by default, but you can provide the `--continuous` flag
+  to tell it to keep going.
 
 These programs provide a basic database structure and will auto-instantiate
 tables that they need. However, they are also too slow to keep up with the
@@ -47,6 +48,21 @@ version of the `simplereader.py` script and the currency processor for
 that, and that's beyond the scope of this project, mostly because doing
 so without being whielisted by GGG would hit their auto-rate-limiting
 thresholds, and I'm not yet a big enough fish to get on that list.
+
+Once you have some data processed, you will have the following tables to
+look over in the DB:
+
+* `stash` - One row per end-use public stash tab with info about user name
+            and so-on
+* `item` - All the item data you could ever want, but in raw form!
+* `sale` - One row per item sale with digested currency info including
+           chaos equivalence.
+* `currency_summary` - A mapping of (`from_currency`, `to_currency`, `league`)
+                       where from and to are currency names and the league
+                       name divides the differnt league-based subsets of the
+                       economy. There is only one row per unique combination,
+                       recording our most up-to-date understanding
+                       of the trading value of each currency.
 
 That being said, you can accomplish quite a bit, just by regularly updating
 your pull to the most recent `next_id` and re-running. If you just wish

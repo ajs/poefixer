@@ -33,9 +33,10 @@ class CurrencyPostprocessor:
     logger = None
     actual_currencies = {}
 
-    def __init__(self, db, start_time, logger):
+    def __init__(self, db, start_time, continuous=False, logger=logging):
         self.db = db
         self.start_time = start_time
+        self.continuous = continuous
         self.logger = logger
 
         self.actual_currencies = self.get_actual_currencies()
@@ -477,11 +478,6 @@ class CurrencyPostprocessor:
     def do_currency_postprocessor(self):
         """Process all of the currency data we've seen to date."""
 
-        offset = 0
-        count = 0
-        todo = True
-        block_size = 1000 # Number of rows per block
-
         def create_table(table, name):
             try:
                 table.__table__.create(bind=self.db.session.bind)
@@ -494,6 +490,16 @@ class CurrencyPostprocessor:
 
         create_table(poefixer.Sale, "Sale")
         create_table(poefixer.CurrencySummary, "Currency Summary")
+
+        while self.continuous:
+            self._currency_processor_single_pass()
+
+    def _currency_processor_single_pass(self):
+
+        offset = 0
+        count = 0
+        todo = True
+        block_size = 1000 # Number of rows per block
 
         start = self.start_time or self.get_last_processed_time()
         if start:

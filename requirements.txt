@@ -1,0 +1,4 @@
+PyMySQL>=0.9.2
+python-rapidjson>=0.6.3
+requests>=2.19.1
+SQLAlchemy>=1.2.10

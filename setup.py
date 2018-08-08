@@ -26,10 +26,12 @@ REQUIRES_PYTHON = '>=3.6.0'
 VERSION = None
 
 REQUIRED = [
-    'PyMySQL>=0.9.2',
-    'python-rapidjson>=0.6.3',
-    'requests>=2.19.1',
-    'SQLAlchemy>=1.2.10',
+    # General requirements. See requirements.txt for latest
+    # tested versioning.
+    'PyMySQL>=0.9',
+    'python-rapidjson',
+    'requests>=2.0.0',
+    'SQLAlchemy>=1.2.0',
 ]
 
 EXTRAS = { }

@@ -1,7 +1,7 @@
 # poefixer
 A Path of Exile Stash API reader and database manager
 
-This module consits of two major components, both of which are
+This module consists of two major components, both of which are
 accessible from the top-level namespace or can be imported individually:
 
 * `stashapi`
@@ -9,7 +9,7 @@ accessible from the top-level namespace or can be imported individually:
 
 The *stashapi module* is the HTTP interface to public stash tab updates
 published by GGG. This is how Path of Exile trading sites get their data,
-though if you're not whitelisted, you will be rate restricted by defualt.
+though if you're not whitelisted, you will be rate restricted by default.
 
 The *db module* is what takes the objects created by stashapi and writes them
 to your database. This creates a _current_ (not time series) database of all
@@ -19,7 +19,7 @@ To load data:
 
 * Begin by creating a database somewhere. MySQL is the most
   heavily tested by the author, but you can try something else
-  if you want. Most of the code relies on sqlachemy, so it should
+  if you want. Most of the code relies on sqlalchemy, so it should
   generally just work...
 * Install the module. If you are running from source code, you
   can `pip install -e .` or you can just set the environment variable

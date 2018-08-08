@@ -55,11 +55,11 @@ class CurrencyPostprocessor:
 
         full_names = list(get_full_names())
         low = lambda name: name.lower()
-        mapping = dict(((low(name), name) for name in full_names))
+        mapping = dict((low(name), name) for name in full_names)
         mapping.update(
-            dict(((dashed(low(name)), name) for name in full_names)))
+            dict((dashed(low(name)), name) for name in full_names))
         mapping.update(
-            dict(((dashed_clean(low(name)), name) for name in full_names)))
+            dict((dashed_clean(low(name)), name) for name in full_names))
 
         self.logger.debug("Mapping of currencies: %r", mapping)
 

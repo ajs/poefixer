@@ -7,11 +7,8 @@ sales data and currency summaries.
 """
 
 
-import re
-import sys
 import time
 import logging
-import argparse
 
 import sqlalchemy
 
@@ -394,7 +391,7 @@ class CurrencyPostprocessor:
                 (row.Item.note and row.Item.note.startswith('~')) or
                 row.Stash.stash.startswith('~')):
             self.logger.debug("No sale")
-            return
+            return None
         is_currency = 'currency' in row.Item.category
         if is_currency:
             name = row.Item.typeLine
@@ -409,7 +406,7 @@ class CurrencyPostprocessor:
             price, currency = (stash_price, stash_currency)
         if price is None or price == 0:
             self.logger.debug("No sale")
-            return
+            return None
         self.logger.debug(
             "%s%sfor sale for %s %s" % (
                 name,
@@ -454,6 +451,8 @@ class CurrencyPostprocessor:
             existing.sale_amount_chaos = amount_chaos
             self.db.session.merge(existing)
 
+        return existing.id
+
     def get_last_processed_time(self):
         """
         Get the item update time relevant to the most recent sale
@@ -491,22 +490,31 @@ class CurrencyPostprocessor:
         create_table(poefixer.Sale, "Sale")
         create_table(poefixer.CurrencySummary, "Currency Summary")
 
+        prev = None
         while self.continuous:
-            self._currency_processor_single_pass()
+            start = self.start_time or self.get_last_processed_time()
+            if start:
+                when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
+                self.logger.info("Starting from %s", when)
+            else:
+                self.logger.info("Starting from beginning of item data.")
 
-    def _currency_processor_single_pass(self):
+            (rows_done, last_row) = self._currency_processor_single_pass(start)
+            if not prev or last_row != prev:
+                prev = last_row
+                self.logger.info("Processed %s rows in a pass", rows_done)
+            elif self.continuous:
+                time.sleep(1)
+
+    def _currency_processor_single_pass(self, start):
 
         offset = 0
         count = 0
+        all_processed = 0
         todo = True
         block_size = 1000 # Number of rows per block
+        last_row = None
 
-        start = self.start_time or self.get_last_processed_time()
-        if start:
-            when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
-            self.logger.info("Starting from %s", when)
-        else:
-            self.logger.info("Starting from beginning of item data.")
         while todo:
             query = self._currency_query(start, block_size, offset)
 
@@ -522,10 +530,15 @@ class CurrencyPostprocessor:
                     self.logger.info(
                         "%s rows in... (%s)",
                         count + offset, row.Item.updated_at)
-                self._process_sale(row)
+                row_id = self._process_sale(row)
+                if row_id:
+                    last_row = row_id
 
             todo = count == block_size
             offset += count
             self.db.session.commit()
+            all_processed += count
+
+        return (all_processed, last_row)
 
 # vim: et:sw=4:sts=4:ai:

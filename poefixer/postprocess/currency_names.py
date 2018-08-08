@@ -29,12 +29,15 @@ OFFICIAL_CURRENCIES = {
     "scour": "Orb of Scouring",
     "vaal": "Vaal Orb",
 }
+
 # But some players write in their own, and there are several common
 # ones in use. See http://currency.poe.trade/tags which I processed
 # using the script from scripts/currency_abbreviations.pl
 # Then we've added a few seen in the wild (first section)
 UNOFFICIAL_CURRENCIES = {
     # Seen in the wild
+    "c": "Chaos Orb",
+    "C": "Chaos Orb",
     "mirror": "Mirror of Kalandra",
     "eshs-breachstone": "Esh's Breachstone",
     "esh-breachstone": "Esh's Breachstone",

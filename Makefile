@@ -1,9 +1,8 @@
 init:
 	pip install -r requirements.txt
 
-#test:
-#	py.test tests
+test:
+	PYTHONPATH=. py.test tests
 
-#.PHONY: init test
-.PHONY: init
+.PHONY: init test
 

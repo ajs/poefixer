@@ -13,7 +13,7 @@ my $name;
 for my $line (split /\r?\n/, $page) {
     if ($line =~ /\<td\b[^\>]*\>\s*(.*?)\s*\<\/td\b[^\>]*\>/) {
         if (++$a % 2 == 0) {
-            say qq{"$_": "$name",} for (split /\s*,\s*/, $1);
+            say qq{"}.decode_entities($_).qq{": "$name",} for (split /\s*,\s*/, $1);
         } else {
             ($name = decode_entities($1)) =~ s/\<img\b[^\>]*\>\s*//
         }

@@ -36,8 +36,6 @@ class CurrencyPostprocessor:
         self.continuous = continuous
         self.logger = logger
 
-        self.actual_currencies = self.get_actual_currencies()
-
     def get_actual_currencies(self):
         """Get the currencies in the DB and create abbreviation mappings"""
 
@@ -492,6 +490,10 @@ class CurrencyPostprocessor:
 
         prev = None
         while self.continuous:
+            # Get all known currency names
+            self.actual_currencies = self.get_actual_currencies()
+
+            # Track what the most recently processed transaction was
             start = self.start_time or self.get_last_processed_time()
             if start:
                 when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(start))
@@ -499,7 +501,10 @@ class CurrencyPostprocessor:
             else:
                 self.logger.info("Starting from beginning of item data.")
 
+            # Actually process all outstading sale records
             (rows_done, last_row) = self._currency_processor_single_pass(start)
+
+            # Pause if no processing was done
             if not prev or last_row != prev:
                 prev = last_row
                 self.logger.info("Processed %s rows in a pass", rows_done)

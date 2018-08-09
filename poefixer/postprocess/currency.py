@@ -8,6 +8,8 @@ sales data and currency summaries.
 
 
 import time
+import math
+import numpy
 import logging
 
 import sqlalchemy
@@ -160,12 +162,7 @@ class CurrencyPostprocessor:
 
         return self._find_value_of(currency, league, price)
 
-    def _get_mean_and_std(
-            self,
-            name, currency, league, sale_time,
-            restrict=False,
-            mean=None,
-            stddev=None):
+    def _get_mean_and_std(self, name, currency, league, sale_time):
         """
         For a given currency sale, get the weighted mean and standard deviation.
 
@@ -175,88 +172,60 @@ class CurrencyPostprocessor:
         * standard deviation
         * total of all weights used
         * count of considered rows
+
+        This used to be done in the DB, but doing math in the database is
+        a pain, and not very portable. Numpy lets us be pretty efficient,
+        so we're not losing all that much.
         """
+
+        def calc_mean_std(values, weights):
+            mean = numpy.average(values, weights=weights)
+            variance = numpy.average((values-mean)**2, weights=weights)
+            stddev = math.sqrt(variance)
+
+            return (mean, stddev)
+
+        # For calculating the weight based on update times.
+        # Number of seconds in a day, more or less.
+        unit = numpy.int(24*60*60)
 
         # This may be DB-specific. Eventually getting it into a
         # pure-SQLAlchemy form would be good...
-        weight_query = '''
-                SELECT
-                    sale2.id,
-                    GREATEST(1, (
-                        (1.0/GREATEST(1,(:now - sale2.updated_at))) * :unit)) as weight
-                FROM sale as sale2'''
+        query = self.db.session.query(poefixer.Sale)
+        query = query.join(
+            poefixer.Item, poefixer.Sale.item_id == poefixer.Item.id)
+        query = query.filter(poefixer.Sale.name == name)
+        query = query.filter(poefixer.Item.league == league)
+        query = query.filter(poefixer.Sale.sale_currency == currency)
 
-        if restrict:
-            restrict_clause = '''ABS(%s.sale_amount - :mean) / 2.0 < :stddev'''
-            weight_query += ' WHERE ' + (restrict_clause %  'sale2')
-            restrict_clause = ' AND ' + (restrict_clause % 'sale')
-            restrict_args = {
-                'mean': mean,
-                'stddev': stddev}
-        else:
-            restrict_clause = ''
-            restrict_args = {}
+        values = numpy.array([
+            (row.sale_amount, unit/max(1,sale_time-row.updated_at))
+            for row in query.all()])
+        if len(values) == 0:
+            return (None, None, None, None)
+        prices = values[:,0]
+        weights = values[:,1]
+        mean, stddev = calc_mean_std(prices, weights)
+        count = len(prices)
+        total_weight = weights.sum()
 
-        weighted_mean_select = sqlalchemy.sql.text('''
-            SELECT
-                SUM(wt.weight),
-                SUM(sale.sale_amount * wt.weight)/GREATEST(1,SUM(wt.weight)) as mean,
-                count(*) as rows
-            FROM sale
-                INNER JOIN item on sale.item_id = item.id
-                INNER JOIN ('''+weight_query+''') as wt
-                    ON wt.id = sale.id
-            WHERE
-                item.active = 1 AND
-                item.league = :league AND
-                sale.name = :name AND
-                sale.sale_currency = :currency''' + restrict_clause)
-        # Our weight unit is how long in seconds we should go before
-        # beginning to decay a value. Decay is currently linear
-        unit = 24*60*60
-        weight, weighted_mean, count_rows = self.db.session.execute(
-            weighted_mean_select, {
-                'name': name,
-                'currency': currency,
-                'league': league,
-                'now': sale_time,
-                'unit': unit,
-                **restrict_args}).fetchone()
+        if count > 3 and stddev > mean/2:
+            self.logger.debug(
+                "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
+                name, currency, stddev, mean)
+            # Throw out values outside of 2 stddev and try again
+            prices_ok = numpy.absolute(prices-mean) <= stddev*2
+            prices = numpy.extract(prices_ok, prices)
+            weights = numpy.extract(prices_ok, weights)
+            mean, stddev = calc_mean_std(prices, weights)
+            count2 = len(prices)
+            total_weight = weights.sum()
+            self.logger.debug(
+                "Recalibration ignored %s rows, final stddev=%s, mean=%s",
+                count - count2, stddev, mean)
+            count = count2
 
-        self.logger.debug(
-            "Weighted mean sale of %s for %s %s",
-            name, weighted_mean, currency)
-
-        if weighted_mean is None or not count_rows:
-            return None
-
-        weighted_stddev_select = sqlalchemy.sql.text('''
-            SELECT
-                SQRT(
-                    SUM(wt.weight * POW(sale.sale_amount - :weighted_mean, 2)) /
-                        ((:count_rows * SUM(wt.weight)) / :count_rows)
-                ) as weighted_stddev
-            FROM sale
-                INNER JOIN item on sale.item_id = item.id
-                INNER JOIN ('''+weight_query+''') as wt
-                    ON wt.id = sale.id
-            WHERE
-                item.active = 1 AND
-                item.league = :league AND
-                sale.name = :name AND
-                sale.sale_currency = :currency''' + restrict_clause)
-        weighted_stddev, = self.db.session.execute(
-            weighted_stddev_select, {
-                'name': name,
-                'currency': currency,
-                'league': league,
-                'count_rows': count_rows,
-                'weighted_mean': weighted_mean,
-                'now': sale_time,
-                'unit': unit,
-                **restrict_args}).fetchone()
-
-        return (weighted_mean, weighted_stddev, weight, count_rows)
+        return (float(mean), float(stddev), float(total_weight), count)
 
     def _update_currency_summary(
             self, name, currency, league, price, sale_time):
@@ -275,20 +244,6 @@ class CurrencyPostprocessor:
             name, currency, weighted_stddev)
         if weighted_stddev is None:
             return None
-        elif count > 3 and weighted_stddev > weighted_mean/2.0:
-            self.logger.debug(
-                "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
-                name, currency, weighted_stddev, weighted_mean)
-            weighted_mean, weighted_stddev, weight, count2 = self._get_mean_and_std(
-                name, currency, league, sale_time,
-                restrict=True,
-                mean=weighted_mean,
-                stddev=weighted_stddev)
-            self.logger.debug(
-                "Recalibration ignored %s rows, final stddev=%s, mean=%s",
-                count - count2, weighted_stddev, weighted_mean)
-            count = count2
-
 
         if do_update:
             cmd = sqlalchemy.sql.expression.update(poefixer.CurrencySummary)
@@ -478,7 +433,8 @@ class CurrencyPostprocessor:
         def create_table(table, name):
             try:
                 table.__table__.create(bind=self.db.session.bind)
-            except sqlalchemy.exc.InternalError as e:
+            except (sqlalchemy.exc.OperationalError,
+                    sqlalchemy.exc.InternalError) as e:
                 if 'already exists' not in str(e):
                     raise
                 self.logger.debug("%s table already exists.", name)

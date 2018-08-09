@@ -489,7 +489,7 @@ class CurrencyPostprocessor:
         create_table(poefixer.CurrencySummary, "Currency Summary")
 
         prev = None
-        while self.continuous:
+        while True:
             # Get all known currency names
             self.actual_currencies = self.get_actual_currencies()
 
@@ -510,6 +510,9 @@ class CurrencyPostprocessor:
                 self.logger.info("Processed %s rows in a pass", rows_done)
             elif self.continuous:
                 time.sleep(1)
+
+            if not self.continuous:
+                break
 
     def _currency_processor_single_pass(self, start):
 

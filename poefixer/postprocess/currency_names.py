@@ -41,6 +41,7 @@ UNOFFICIAL_CURRENCIES = {
     "p": "Perandus Coin",
     "pc": "Perandus Coin",
     "mirror": "Mirror of Kalandra",
+    "fusing": "Orb of Fusing",
     "eshs-breachstone": "Esh's Breachstone",
     "esh-breachstone": "Esh's Breachstone",
     "xophs-breachstone": "Xoph's Breachstone",
@@ -57,6 +58,9 @@ UNOFFICIAL_CURRENCIES = {
     "hydra": "Fragment of the Hydra",
     "wisdom": "Scroll of Wisdom",
     "the-samurais-eye": "The Samurai's Eye",
+    "apprentice": "Apprentice Cartographer's Sextant",
+    "journeyman": "Journeyman Cartographer's Sextant",
+    "master": "Master Cartographer's Sextant",
     # From http://currency.poe.trade/tags, see above
     "alt": "Orb of Alteration",
     "fuse": "Orb of Fusing",

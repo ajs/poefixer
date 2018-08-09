@@ -8,6 +8,7 @@ import re
 # Currencies are abbreviated in notes.
 # The standard form of a note is this:
 PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+)\s+([\w\-\']+)')
+PRICE_WITH_SPACE_RE = re.compile(r'\~(price|b\/o)\s+(\S+)\s+([ \w\-\']+)')
 
 # The last part of the note is an abbreviated currency name.
 # Official currencies are those available in the in-game drop-down menu

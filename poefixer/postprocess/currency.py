@@ -16,7 +16,8 @@ import sqlalchemy
 
 import poefixer
 from .currency_names import \
-    PRICE_RE, OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
+    PRICE_RE, PRICE_WITH_SPACE_RE, \
+    OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
 
 
 class CurrencyPostprocessor:
@@ -67,7 +68,7 @@ class CurrencyPostprocessor:
 
         return mapping
 
-    def parse_note(self, note):
+    def parse_note(self, note, regex=None):
         """
         The 'note' is a user-edited field that sets pricing on an item or
         whole stash tab.
@@ -77,7 +78,7 @@ class CurrencyPostprocessor:
         """
 
         if note is not None:
-            match = PRICE_RE.search(note)
+            match = (regex or PRICE_RE).search(note)
             if match:
                 try:
                     (sale_type, amt, currency) = match.groups()
@@ -94,6 +95,11 @@ class CurrencyPostprocessor:
                     elif low_cur in self.actual_currencies:
                         return (amt, self.actual_currencies[low_cur])
                     elif currency:
+                        if regex is None:
+                            # Try with spaces and report the longer name
+                            # if present
+                            return self.parse_note(
+                                note, regex=PRICE_WITH_SPACE_RE)
                         self.logger.warning(
                             "Currency note: %r has unknown currency abbrev %s",
                             note, currency)
@@ -103,6 +109,9 @@ class CurrencyPostprocessor:
                         self.logger.debug("Invalid price: %r" % note)
                     else:
                         raise
+            elif regex is None:
+                # Try again with spaces
+                return self.parse_note(note, regex=PRICE_WITH_SPACE_RE)
         return (None, None)
 
     def _currency_query(self, start, block_size, offset):

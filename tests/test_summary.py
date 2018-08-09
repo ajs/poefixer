@@ -55,6 +55,31 @@ class TestPoefixerDb(unittest.TestCase):
         self.assertAlmostEqual(row.mean, 0.01)
         self.assertEqual(row.league, 'Standard')
 
+    def test_actual_currency_name(self):
+        """
+        Test the dynamic currency name handling based on data
+        we have seen.
+        """
+
+        from_c = "My Precious"
+        stashes = self._sample_stashes([(from_c, "Exalted Orb", 0.01)])
+
+        db = self._get_default_db()
+
+        for stash in stashes:
+            db.insert_api_stash(stash, with_items=True)
+        db.session.commit()
+
+        cp = CurrencyPostprocessor(db, None, logger=self.logger)
+        cp.do_currency_postprocessor()
+        # Second time picks up the new names we've seen
+        cp.do_currency_postprocessor()
+
+        # Now see if we'll use those new names
+        (amt, cur) = cp.parse_note("~price 1 " + from_c)
+        self.assertEqual(amt, 1)
+        self.assertEqual(cur, from_c)
+
     def test_currency_abbreviations(self):
         """Make sure that abbreviated sale notes work"""
 

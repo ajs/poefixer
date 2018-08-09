@@ -15,6 +15,7 @@ import sqlalchemy
 
 import poefixer
 import poefixer.postprocess.currency as currency
+import poefixer.extra.logger as plogger
 
 
 DEFAULT_DSN='sqlite:///:memory:'
@@ -72,7 +73,6 @@ if __name__ == '__main__':
     options = parse_args()
     echo = False
 
-    logger = logging.getLogger('poefixer')
     if options.debug:
         loglevel = 'DEBUG'
         echo = True
@@ -80,13 +80,7 @@ if __name__ == '__main__':
         loglevel = 'INFO'
     else:
         loglevel = 'WARNING'
-    logger.setLevel(loglevel)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter(
-        '%(asctime)s:%(name)s:%(levelname)s: %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+    logger = plogger.get_poefixer_logger(loglevel)
     logger.debug("Set logging level: %s" % loglevel)
 
     db = poefixer.PoeDb(

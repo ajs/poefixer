@@ -61,7 +61,12 @@ def pull_data(database_dsn, next_id, most_recent, logger):
 if __name__ == '__main__':
     options = parse_args()
 
-    logger = plogger.get_poefixer_logger('DEBUG' if options.debug else 'INFO')
+    if options.debug:
+        level = 'DEBUG'
+        logging.basicConfig(level=level)
+    else:
+        level = 'INFO'
+    logger = plogger.get_poefixer_logger(level)
 
     pull_data(
         database_dsn=options.database_dsn,

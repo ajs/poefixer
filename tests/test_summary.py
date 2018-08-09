@@ -79,6 +79,12 @@ class TestPoefixerDb(unittest.TestCase):
         (amt, cur) = cp.parse_note("~price 1 " + from_c)
         self.assertEqual(amt, 1)
         self.assertEqual(cur, from_c)
+        # Try dashed version
+        dashed_c = from_c.lower().replace(' ', '-')
+        (amt, cur) = cp.parse_note("~price 1 " + dashed_c)
+        self.assertEqual(amt, 1)
+        # Make sure it goes back to the original
+        self.assertEqual(cur, from_c)
 
     def test_currency_abbreviations(self):
         """Make sure that abbreviated sale notes work"""

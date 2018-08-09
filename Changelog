@@ -1,0 +1,15 @@
+# See git histoy for more detail, of course.
+
+2018-08-08 - 1.1 Huge improvements and ready for others to start using.
+
+	* A stand-along currency summarizing tool
+	* Ability to query poe.ninja for current Id
+	* Start of a test suite
+	* Initial DB structure somewhat stable
+	* League handling fixed
+	* Curency abbreviations should not have been so hard!
+	* Debug and info logging sorted
+	* Basic chaos equivalents are calculated
+	* Probably lots of bugs!
+
+2018-08-01 - 1.0 Initial version

@@ -58,39 +58,40 @@ class TestPoefixerDb(unittest.TestCase):
     def test_currency_abbreviations(self):
         """Make sure that abbreviated sale notes work"""
 
+        # A sample of names to start
         currency_abbrevs = (
-                # Official names
-                "alt", "blessed", "chance", "chisel", "chrom", "divine",
-                "jew", "regal", "regret", "scour", "vaal",
-                # Names we saw in the data and adopted
-                "c", "p", "mirror", "eshs-breachstone", "minotaur",
-                "wisdom",
-                # Names we got from poe.trade
-                "fus", "alchemy", "gemc", "ex")
-        currency_samples = [
-            ("Exalted Orb", abbrev, 1) for abbrev in currency_abbrevs]
-
-        stashes = self._sample_stashes(currency_samples)
+            # Official names
+            "alt", "blessed", "chance", "chisel", "chrom", "divine",
+            "jew", "regal", "regret", "scour", "vaal",
+            # Names we saw in the data and adopted
+            "c", "p", "mirror", "eshs-breachstone", "minotaur",
+            "wisdom",
+            # Names we got from poe.trade
+            "fus", "alchemy", "gemc", "ex")
 
         db = self._get_default_db()
-
-        for stash in stashes:
-            db.insert_api_stash(stash, with_items=True)
-
-        db.session.commit()
-
         cp = CurrencyPostprocessor(db, None, logger=self.logger)
-        cp.do_currency_postprocessor()
 
-        query = db.session.query(poefixer.CurrencySummary)
-        self.assertEqual(query.count(), len(currency_samples))
+        for currency in currency_abbrevs:
+            (amt, cur) = cp.parse_note("~price 1 " + currency)
+            self.assertEqual(amt, 1)
+            self.assertNotEqual(cur, currency)
 
-        for row in query.all():
-            self.assertTrue(
-                row.to_currency != row.to_currency.lower(),
-                "Cuurency official name should contain upper-case")
-            self.assertEqual(row.from_currency, "Exalted Orb")
-            self.assertAlmostEqual(row.mean, 1)
+        # Now bulk-test all presets
+        from poefixer.postprocess.currency_names import \
+            OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
+
+        currencies = {}
+        currencies.update(OFFICIAL_CURRENCIES)
+        currencies.update(UNOFFICIAL_CURRENCIES)
+
+        for abbrev, full in currencies.items():
+            price_note = "~b/o 1/2 " + abbrev
+            (amt, cur) = cp.parse_note(price_note)
+            self.assertEqual(
+                cur, full,
+                "Parse %s failed: %r != %r" % (price_note, cur, full))
+            self.assertEqual(amt, 1.0/2)
 
     def _sample_stashes(self, descriptors):
 

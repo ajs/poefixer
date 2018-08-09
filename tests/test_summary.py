@@ -25,8 +25,55 @@ class TestPoefixerDb(unittest.TestCase):
         return db
 
     def test_insert_currency(self):
+        """
+        Test the currency summary handling on a list of
+        20 reasonable offers and one that is off by an order
+        of magnitude. The processing should ignore the last one
+        for summary purposes and produce a mean value that is
+        in line with the majority of results.
+        """
+
+        stashes = self._sample_stashes(
+            ([("Chaos Orb", "Exalted Orb", 0.01) for _ in range(20)] +
+             [("Chaos Orb", "Exalted Orb", 100)]))
+
         db = self._get_default_db()
-        stashes = self._sample_stashes()
+
+        for stash in stashes:
+            db.insert_api_stash(stash, with_items=True)
+        db.session.commit()
+
+        cp = CurrencyPostprocessor(db, None, logger=self.logger)
+        cp.do_currency_postprocessor()
+
+        query = db.session.query(poefixer.CurrencySummary)
+        self.assertEqual(query.count(), 1)
+        row = query.one()
+        self.assertEqual(row.from_currency, "Chaos Orb")
+        self.assertEqual(row.to_currency, "Exalted Orb")
+        self.assertEqual(row.count, 20) # The extreme value was discarded
+        self.assertAlmostEqual(row.mean, 0.01)
+        self.assertEqual(row.league, 'Standard')
+
+    def test_currency_abbreviations(self):
+        """Make sure that abbreviated sale notes work"""
+
+        currency_abbrevs = (
+                # Official names
+                "alt", "blessed", "chance", "chisel", "chrom", "divine",
+                "jew", "regal", "regret", "scour", "vaal",
+                # Names we saw in the data and adopted
+                "c", "p", "mirror", "eshs-breachstone", "minotaur",
+                "wisdom",
+                # Names we got from poe.trade
+                "fus", "alchemy", "gemc", "ex")
+        currency_samples = [
+            ("Exalted Orb", abbrev, 1) for abbrev in currency_abbrevs]
+
+        stashes = self._sample_stashes(currency_samples)
+
+        db = self._get_default_db()
+
         for stash in stashes:
             db.insert_api_stash(stash, with_items=True)
 
@@ -36,15 +83,17 @@ class TestPoefixerDb(unittest.TestCase):
         cp.do_currency_postprocessor()
 
         query = db.session.query(poefixer.CurrencySummary)
-        self.assertEqual(query.count(), 1)
-        for row in query.all():
-            self.assertEqual(row.from_currency, "Chaos Orb")
-            self.assertEqual(row.to_currency, "Exalted Orb")
-            self.assertEqual(row.count, 20)
-            self.assertAlmostEqual(row.mean, 0.01)
-            self.assertEqual(row.league, 'Standard')
+        self.assertEqual(query.count(), len(currency_samples))
 
-    def _sample_stashes(self):
+        for row in query.all():
+            self.assertTrue(
+                row.to_currency != row.to_currency.lower(),
+                "Cuurency official name should contain upper-case")
+            self.assertEqual(row.from_currency, "Exalted Orb")
+            self.assertAlmostEqual(row.mean, 1)
+
+    def _sample_stashes(self, descriptors):
+
         stash = {
             'id': '%064x' % 123456,
             'accountName': 'JoeTest',
@@ -52,10 +101,14 @@ class TestPoefixerDb(unittest.TestCase):
             'stashType': 'X',
             'public': True,
             'league': 'Standard',
-            'items': ([
-                currency_item('Chaos Orb', n, "Exalted Orb", 0.01)
-                    for n in range(20)] + [
-                currency_item('Chaos Orb', 20, "Exalted Orb", 100)])}
+            'items': []}
+
+        offset = 0
+        for desc in descriptors:
+            (from_c, to_c, price) = desc
+            stash['items'].append(currency_item(from_c, offset, to_c, price))
+            offset += 1
+
         return [poefixer.ApiStash(stash)]
 
 def currency_item(currency, offset, ask_currency, ask_value):

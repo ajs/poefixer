@@ -109,9 +109,6 @@ class CurrencyPostprocessor:
                         self.logger.debug("Invalid price: %r" % note)
                     else:
                         raise
-            elif regex is None:
-                # Try again with spaces
-                return self.parse_note(note, regex=PRICE_WITH_SPACE_RE)
         return (None, None)
 
     def _currency_query(self, start, block_size, offset):

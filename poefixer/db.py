@@ -204,6 +204,10 @@ class CurrencySummary(PoeDbBase):
     weight = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     mean = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     standard_dev = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+    created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    updated_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
 
     __table_args__ = (
         sqlalchemy.UniqueConstraint('from_currency', 'to_currency', 'league'),)

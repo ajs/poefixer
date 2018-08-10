@@ -62,6 +62,11 @@ UNOFFICIAL_CURRENCIES = {
     "apprentice": "Apprentice Cartographer's Sextant",
     "journeyman": "Journeyman Cartographer's Sextant",
     "master": "Master Cartographer's Sextant",
+    "exalt": "Exalted Orb",
+    "trans": "Orb of Transmutation",
+    "orb-of-transmutation": "Orb of Transmutation",
+    "transmute": "Orb of Transmutation",
+    "orb-of-anullment": "Orb of Annulment",
     # From http://currency.poe.trade/tags, see above
     "alt": "Orb of Alteration",
     "fuse": "Orb of Fusing",

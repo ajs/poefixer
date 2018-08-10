@@ -86,19 +86,30 @@ class TestPoefixerDb(unittest.TestCase):
         # Make sure it goes back to the original
         self.assertEqual(cur, from_c)
 
-    def test_currency_abbreviations(self):
-        """Make sure that abbreviated sale notes work"""
+    def test_currency_abbreviations(self, single=None, should_be=None):
+        """
+        Make sure that abbreviated sale notes work
 
-        # A sample of names to start
-        currency_abbrevs = (
-            # Official names
-            "alt", "blessed", "chance", "chisel", "chrom", "divine",
-            "jew", "regal", "regret", "scour", "vaal",
-            # Names we saw in the data and adopted
-            "c", "p", "mirror", "eshs-breachstone", "minotaur",
-            "wisdom",
-            # Names we got from poe.trade
-            "fus", "alchemy", "gemc", "ex")
+        If passed `single`, it is used as the one currency
+        abbreviation to test. This is for regressions.
+
+        If `single` is provided, then `should_be` can be set
+        to the expected expansion.
+        """
+
+        if single:
+            currency_abbrevs = (single,)
+        else:
+            # A sample of names to start
+            currency_abbrevs = (
+                # Official names
+                "alt", "blessed", "chance", "chisel", "chrom", "divine",
+                "jew", "regal", "regret", "scour", "vaal",
+                # Names we saw in the data and adopted
+                "c", "p", "mirror", "eshs-breachstone", "minotaur",
+                "wisdom",
+                # Names we got from poe.trade
+                "fus", "alchemy", "gemc", "ex")
 
         db = self._get_default_db()
         cp = CurrencyPostprocessor(db, None, logger=self.logger)
@@ -107,6 +118,11 @@ class TestPoefixerDb(unittest.TestCase):
             (amt, cur) = cp.parse_note("~price 1 " + currency)
             self.assertEqual(amt, 1)
             self.assertNotEqual(cur, currency)
+            if should_be:
+                self.assertEqual(cur, should_be)
+
+        if single:
+            return
 
         # Now bulk-test all presets
         from poefixer.postprocess.currency_names import \
@@ -123,6 +139,20 @@ class TestPoefixerDb(unittest.TestCase):
                 cur, full,
                 "Parse %s failed: %r != %r" % (price_note, cur, full))
             self.assertEqual(amt, 1.0/2)
+
+    def test_exalt_regression(self):
+        self.test_currency_abbreviations(
+            single='exalt', should_be='Exalted Orb')
+
+    def test_trans_regression(self):
+        self.test_currency_abbreviations(
+            single='trans', should_be='Orb of Transmutation')
+
+    def test_anull_regression(self):
+        """Common spelling error"""
+
+        self.test_currency_abbreviations(
+            single='orb-of-anullment', should_be='Orb of Annulment')
 
     def _sample_stashes(self, descriptors):
 

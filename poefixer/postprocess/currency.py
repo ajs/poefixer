@@ -142,7 +142,10 @@ class CurrencyPostprocessor:
 
         Item = poefixer.Item
 
-        query = self.db.session.query(poefixer.Item, poefixer.Stash)
+        query = self.db.session.query(poefixer.Item)
+        query = query.join(
+            poefixer.Stash,
+            poefixer.Stash.id == poefixer.Item.stash_id)
         query = query.add_columns(
             poefixer.Item.id,
             poefixer.Item.api_id,
@@ -152,15 +155,8 @@ class CurrencyPostprocessor:
             poefixer.Stash.stash,
             poefixer.Item.name,
             poefixer.Stash.public)
-        query = query.filter(poefixer.Stash.id == poefixer.Item.stash_id)
-        query = query.filter(poefixer.Item.active == True)
-        query = query.filter(sqlalchemy.or_(
-            sqlalchemy.and_(
-                poefixer.Item.note != None,
-                poefixer.Item.note != ""),
-            sqlalchemy.and_(
-                poefixer.Stash.stash != None,
-                poefixer.Stash.stash != "")))
+        # Not currently in use
+        #query = query.filter(poefixer.Item.active == True)
         query = query.filter(poefixer.Stash.public == True)
         #query = query.filter(sqlalchemy.func.json_contains_path(
         #    poefixer.Item.category, 'all', '$.currency') == 1)
@@ -187,7 +183,7 @@ class CurrencyPostprocessor:
             self._update_currency_summary(
                 name, currency, league, price, sale_time)
 
-        return self._find_value_of(currency, league, price)
+        return self.find_value_of(currency, league, price)
 
     def _get_mean_and_std(self, name, currency, league, sale_time):
         """
@@ -316,7 +312,7 @@ class CurrencyPostprocessor:
             updated_at=int(time.time()), **add_values)
         self.db.session.execute(cmd)
 
-    def _find_value_of(self, name, league, price):
+    def find_value_of(self, name, league, price):
         """
         Return the best current understanding of the value of the
         named currency, in chaos, in the given `league`,
@@ -353,7 +349,7 @@ class CurrencyPostprocessor:
         for row in query.all():
             target = row.to_currency
             if target == 'Chaos Orb':
-                if high_score and row.weight >= high_score:
+                if not high_score or row.weight >= high_score:
                     self.logger.debug(
                         "Conversion discovered %s -> Chaos = %s",
                         name, row.mean)
@@ -376,8 +372,7 @@ class CurrencyPostprocessor:
                     conversion = row.mean * row2.mean
                     self.logger.debug(
                         "Conversion discovered %s -> %s (%s) -> Chaos (%s) = %s",
-                        name, row2.from_currency, row.mean,
-                        row2.mean, conversion)
+                        name, target, row.mean, row2.mean, conversion)
 
         if high_score:
             return conversion * price
@@ -387,16 +382,22 @@ class CurrencyPostprocessor:
             query = query.filter(to_currency_field == name)
             query = query.filter(league_field == league)
             row = query.one_or_none()
+
             if row:
-                return (1.0 / row.mean) * price
+                inverse = 1.0/row.mean
+                if row:
+                    self.logger.debug(
+                        "Falling back on inverse Chaos -> %s pricing: %s",
+                        name, inverse)
+                    return inverse * price
 
         return None
 
     def _process_sale(self, row):
         if not (
                 (row.Item.note and row.Item.note.startswith('~')) or
-                row.Stash.stash.startswith('~')):
-            #self.logger.debug("No sale")
+                row.stash.startswith('~')):
+            # No sale
             return None
         is_currency = 'currency' in row.Item.category
         if is_currency:
@@ -404,15 +405,17 @@ class CurrencyPostprocessor:
         else:
             name = (row.Item.name + " " + row.Item.typeLine).strip()
         pricing = row.Item.note
-        stash_pricing = row.Stash.stash
+        stash_pricing = row.stash
         stash_price, stash_currency = self.parse_note(stash_pricing)
         price, currency = self.parse_note(pricing)
         if price is None:
             # No item price, so fall back to stash
             price, currency = (stash_price, stash_currency)
         if price is None or price == 0:
-            #self.logger.debug("No sale")
+            # No sale
             return None
+        # We used to summarize each sale, but this can be a fairly
+        # tight loop, so TODO: make this conditional on debug logging.
         #self.logger.debug(
         #    "%s%s for sale for %s %s" % (
         #        name,
@@ -442,7 +445,6 @@ class CurrencyPostprocessor:
 
         # Add it so we can re-calc values...
         self.db.session.add(existing)
-        self.db.session.flush()
 
         league = row.Item.league
 
@@ -540,6 +542,8 @@ class CurrencyPostprocessor:
             # is the item price with the stash price as a fallback.
             count = 0
             for row in query.all():
+                if not (row.Item.note or row.stash):
+                    continue
                 max_id = row.Item.id
                 count += 1
                 self.logger.debug("Row in %s" % row.Item.id)

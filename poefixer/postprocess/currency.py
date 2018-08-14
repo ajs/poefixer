@@ -32,6 +32,7 @@ class CurrencyPostprocessor:
     db = None
     start_time = None
     logger = None
+    limit = None
     actual_currencies = {}
     # How long can we go considering an existing calculation "close enough"
     # This is a performance tuning parameter. Intger number of mintues
@@ -44,10 +45,12 @@ class CurrencyPostprocessor:
     def __init__(self, db, start_time,
             continuous=False,
             recent=600, # Number of seconds, timedelta or None for caching
+            limit=None, # Max number of rows to process
             logger=logging):
         self.db = db
         self.start_time = start_time
         self.continuous = continuous
+        self.limit = limit
         self.logger = logger
         if recent is None or isinstance(recent, int):
             self.recent = recent
@@ -561,6 +564,8 @@ class CurrencyPostprocessor:
             offset += count
             self.db.session.commit()
             all_processed += count
+            if self.limit and all_processed > self.limit:
+                break
 
         return (all_processed, last_row)
 

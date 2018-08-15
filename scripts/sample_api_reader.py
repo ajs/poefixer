@@ -21,6 +21,8 @@ DEFAULT_DSN='sqlite:///:memory:'
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
+        '--verbose', action='store_true', help='Verbose output')
+    parser.add_argument(
         '--debug', action='store_true', help='Debugging output')
     parser.add_argument(
         '-d', '--database-dsn', action='store',
@@ -63,9 +65,11 @@ if __name__ == '__main__':
 
     if options.debug:
         level = 'DEBUG'
-        logging.basicConfig(level=level)
-    else:
+    elif options.verbose:
         level = 'INFO'
+    else:
+        level = 'WARNING'
+    logging.basicConfig(level=level)
     logger = plogger.get_poefixer_logger(level)
 
     pull_data(

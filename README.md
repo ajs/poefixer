@@ -64,6 +64,8 @@ look over in the DB:
                        recording our most up-to-date understanding
                        of the trading value of each currency.
 
+You can also peruse the sample queries in `poefixer/extra`.
+
 That being said, you can accomplish quite a bit, just by regularly updating
 your pull to the most recent `next_id` and re-running. If you just wish
 to analyze the market, this is more than sufficient, and will quickly give

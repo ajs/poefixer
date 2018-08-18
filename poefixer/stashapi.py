@@ -291,9 +291,11 @@ class PoeApi:
         if slow:
             self.set_last_time()
         req.raise_for_status()
+        self.logger.debug("Acquired stash data")
         # rapidjson doesn't tell python what its methods are...
         # pylint: disable=c-extension-no-member
         data = json.loads(req.text)
+        self.logger.debug("Loaded stash data from JSON")
         if 'next_change_id' not in data:
             raise KeyError('next_change_id required field not present in response')
         return (data['stashes'], data['next_change_id'])

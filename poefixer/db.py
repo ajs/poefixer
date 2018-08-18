@@ -59,7 +59,7 @@ class Stash(PoeDbBase):
     lastCharacterName = sqlalchemy.Column(sqlalchemy.Unicode(255))
     stash = sqlalchemy.Column(sqlalchemy.Unicode(255))
     stashType = sqlalchemy.Column(sqlalchemy.Unicode(32), nullable=False)
-    public = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False)
+    public = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False, index=True)
     created_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
     updated_at = sqlalchemy.Column(
@@ -133,7 +133,8 @@ class Item(PoeDbBase):
     # This is an internal field which we use to track stash updates.
     # When a new version of the stash shows up, we mark all of the
     # items in it inactive, then we re-activate the one's we see again.
-    active = sqlalchemy.Column(sqlalchemy.Boolean, nullable=False, default=True)
+    active = sqlalchemy.Column(
+        sqlalchemy.Boolean, nullable=False, default=True, index=True)
     created_at = sqlalchemy.Column(
         sqlalchemy.Integer, nullable=False, index=True)
     updated_at = sqlalchemy.Column(
@@ -204,6 +205,10 @@ class CurrencySummary(PoeDbBase):
     weight = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     mean = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
     standard_dev = sqlalchemy.Column(sqlalchemy.Float, nullable=False)
+    created_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
+    updated_at = sqlalchemy.Column(
+        sqlalchemy.Integer, nullable=False, index=True)
 
     __table_args__ = (
         sqlalchemy.UniqueConstraint('from_currency', 'to_currency', 'league'),)

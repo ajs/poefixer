@@ -7,9 +7,12 @@ Trivial API reader/writer for testing
 
 import json
 import logging
-import requests
 import argparse
+
+import requests
+
 import poefixer
+import poefixer.extra.logger as plogger
 
 
 DEFAULT_DSN='sqlite:///:memory:'
@@ -17,6 +20,8 @@ DEFAULT_DSN='sqlite:///:memory:'
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--verbose', action='store_true', help='Verbose output')
     parser.add_argument(
         '--debug', action='store_true', help='Debugging output')
     parser.add_argument(
@@ -58,17 +63,14 @@ def pull_data(database_dsn, next_id, most_recent, logger):
 if __name__ == '__main__':
     options = parse_args()
 
-    logger = logging.getLogger('poefixer')
     if options.debug:
-        loglevel = 'DEBUG'
+        level = 'DEBUG'
+    elif options.verbose:
+        level = 'INFO'
     else:
-        loglevel = 'INFO'
-    logger.setLevel(loglevel)
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s: %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
+        level = 'WARNING'
+    logging.basicConfig(level=level)
+    logger = plogger.get_poefixer_logger(level)
 
     pull_data(
         database_dsn=options.database_dsn,

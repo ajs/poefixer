@@ -7,7 +7,8 @@ import re
 
 # Currencies are abbreviated in notes.
 # The standard form of a note is this:
-PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+)\s+([\w\-]+)')
+PRICE_RE = re.compile(r'\~(price|b\/o)\s+(\S+)\s+([\w\-\']+)')
+PRICE_WITH_SPACE_RE = re.compile(r'\~(price|b\/o)\s+(\S+)\s+([ \w\-\']+)')
 
 # The last part of the note is an abbreviated currency name.
 # Official currencies are those available in the in-game drop-down menu
@@ -41,6 +42,7 @@ UNOFFICIAL_CURRENCIES = {
     "p": "Perandus Coin",
     "pc": "Perandus Coin",
     "mirror": "Mirror of Kalandra",
+    "fusing": "Orb of Fusing",
     "eshs-breachstone": "Esh's Breachstone",
     "esh-breachstone": "Esh's Breachstone",
     "xophs-breachstone": "Xoph's Breachstone",
@@ -57,6 +59,14 @@ UNOFFICIAL_CURRENCIES = {
     "hydra": "Fragment of the Hydra",
     "wisdom": "Scroll of Wisdom",
     "the-samurais-eye": "The Samurai's Eye",
+    "apprentice": "Apprentice Cartographer's Sextant",
+    "journeyman": "Journeyman Cartographer's Sextant",
+    "master": "Master Cartographer's Sextant",
+    "exalt": "Exalted Orb",
+    "trans": "Orb of Transmutation",
+    "orb-of-transmutation": "Orb of Transmutation",
+    "transmute": "Orb of Transmutation",
+    "orb-of-anullment": "Orb of Annulment",
     # From http://currency.poe.trade/tags, see above
     "alt": "Orb of Alteration",
     "fuse": "Orb of Fusing",

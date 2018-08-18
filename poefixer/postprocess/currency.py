@@ -8,13 +8,17 @@ sales data and currency summaries.
 
 
 import time
+import math
+import numpy
 import logging
+import datetime
 
 import sqlalchemy
 
 import poefixer
 from .currency_names import \
-    PRICE_RE, OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
+    PRICE_RE, PRICE_WITH_SPACE_RE, \
+    OFFICIAL_CURRENCIES, UNOFFICIAL_CURRENCIES
 
 
 class CurrencyPostprocessor:
@@ -28,13 +32,36 @@ class CurrencyPostprocessor:
     db = None
     start_time = None
     logger = None
+    limit = None
     actual_currencies = {}
+    # How long can we go considering an existing calculation "close enough"
+    # This is a performance tuning parameter. Intger number of mintues
+    recent = None
+    # Cutoff for considering "old" data
+    relevant = int(datetime.timedelta(days=15).total_seconds())
+    # Weight the data we do consider based on an increment of a half-day
+    weight_increment = int(datetime.timedelta(hours=12).total_seconds())
 
-    def __init__(self, db, start_time, continuous=False, logger=logging):
+    def __init__(self, db, start_time,
+            continuous=False,
+            recent=600, # Number of seconds, timedelta or None for caching
+            limit=None, # Max number of rows to process
+            logger=logging):
         self.db = db
         self.start_time = start_time
         self.continuous = continuous
+        self.limit = limit
         self.logger = logger
+        if recent is None or isinstance(recent, int):
+            self.recent = recent
+        elif isinstance(recent, datetime.timedelta):
+            self.recent = recent.total_seconds()
+        else:
+            try:
+                self.recent = int(recent)
+            except:
+                self.log("Invalid 'recent' caching parameter: %r", recent)
+                raise
 
     def get_actual_currencies(self):
         """Get the currencies in the DB and create abbreviation mappings"""
@@ -65,7 +92,7 @@ class CurrencyPostprocessor:
 
         return mapping
 
-    def parse_note(self, note):
+    def parse_note(self, note, regex=None):
         """
         The 'note' is a user-edited field that sets pricing on an item or
         whole stash tab.
@@ -75,7 +102,7 @@ class CurrencyPostprocessor:
         """
 
         if note is not None:
-            match = PRICE_RE.search(note)
+            match = (regex or PRICE_RE).search(note)
             if match:
                 try:
                     (sale_type, amt, currency) = match.groups()
@@ -92,6 +119,11 @@ class CurrencyPostprocessor:
                     elif low_cur in self.actual_currencies:
                         return (amt, self.actual_currencies[low_cur])
                     elif currency:
+                        if regex is None:
+                            # Try with spaces and report the longer name
+                            # if present
+                            return self.parse_note(
+                                note, regex=PRICE_WITH_SPACE_RE)
                         self.logger.warning(
                             "Currency note: %r has unknown currency abbrev %s",
                             note, currency)
@@ -113,7 +145,10 @@ class CurrencyPostprocessor:
 
         Item = poefixer.Item
 
-        query = self.db.session.query(poefixer.Item, poefixer.Stash)
+        query = self.db.session.query(poefixer.Item)
+        query = query.join(
+            poefixer.Stash,
+            poefixer.Stash.id == poefixer.Item.stash_id)
         query = query.add_columns(
             poefixer.Item.id,
             poefixer.Item.api_id,
@@ -123,15 +158,8 @@ class CurrencyPostprocessor:
             poefixer.Stash.stash,
             poefixer.Item.name,
             poefixer.Stash.public)
-        query = query.filter(poefixer.Stash.id == poefixer.Item.stash_id)
-        query = query.filter(poefixer.Item.active == True)
-        query = query.filter(sqlalchemy.or_(
-            sqlalchemy.and_(
-                poefixer.Item.note != None,
-                poefixer.Item.note != ""),
-            sqlalchemy.and_(
-                poefixer.Stash.stash != None,
-                poefixer.Stash.stash != "")))
+        # Not currently in use
+        #query = query.filter(poefixer.Item.active == True)
         query = query.filter(poefixer.Stash.public == True)
         #query = query.filter(sqlalchemy.func.json_contains_path(
         #    poefixer.Item.category, 'all', '$.currency') == 1)
@@ -158,14 +186,9 @@ class CurrencyPostprocessor:
             self._update_currency_summary(
                 name, currency, league, price, sale_time)
 
-        return self._find_value_of(currency, league, price)
+        return self.find_value_of(currency, league, price)
 
-    def _get_mean_and_std(
-            self,
-            name, currency, league, sale_time,
-            restrict=False,
-            mean=None,
-            stddev=None):
+    def _get_mean_and_std(self, name, currency, league, sale_time):
         """
         For a given currency sale, get the weighted mean and standard deviation.
 
@@ -175,88 +198,67 @@ class CurrencyPostprocessor:
         * standard deviation
         * total of all weights used
         * count of considered rows
+
+        This used to be done in the DB, but doing math in the database is
+        a pain, and not very portable. Numpy lets us be pretty efficient,
+        so we're not losing all that much.
         """
+
+        def calc_mean_std(values, weights):
+            mean = numpy.average(values, weights=weights)
+            variance = numpy.average((values-mean)**2, weights=weights)
+            stddev = math.sqrt(variance)
+
+            return (mean, stddev)
+
+        now = int(time.time())
 
         # This may be DB-specific. Eventually getting it into a
         # pure-SQLAlchemy form would be good...
-        weight_query = '''
-                SELECT
-                    sale2.id,
-                    GREATEST(1, (
-                        (1.0/GREATEST(1,(:now - sale2.updated_at))) * :unit)) as weight
-                FROM sale as sale2'''
+        query = self.db.session.query(poefixer.Sale)
+        query = query.join(
+            poefixer.Item, poefixer.Sale.item_id == poefixer.Item.id)
+        query = query.filter(poefixer.Sale.name == name)
+        query = query.filter(poefixer.Item.league == league)
+        query = query.filter(poefixer.Sale.sale_currency == currency)
+        # Items older than a month are really not worth anything in terms
+        # establishing the behavior of the economy. Even rare items like
+        # mirrors move fast enough for a month to be sufficient.
+        query = query.filter(
+            poefixer.Sale.item_updated_at > (now-self.relevant))
+        query = query.add_columns(
+            poefixer.Sale.sale_amount,
+            poefixer.Sale.item_updated_at)
 
-        if restrict:
-            restrict_clause = '''ABS(%s.sale_amount - :mean) / 2.0 < :stddev'''
-            weight_query += ' WHERE ' + (restrict_clause %  'sale2')
-            restrict_clause = ' AND ' + (restrict_clause % 'sale')
-            restrict_args = {
-                'mean': mean,
-                'stddev': stddev}
-        else:
-            restrict_clause = ''
-            restrict_args = {}
+        values = numpy.array([(
+            row.sale_amount,
+            self.weight_increment/max(1,sale_time-row.item_updated_at))
+            for row in query.all()])
+        if len(values) == 0:
+            return (None, None, None, None)
+        prices = values[:,0]
+        weights = values[:,1]
+        mean, stddev = calc_mean_std(prices, weights)
+        count = len(prices)
+        total_weight = weights.sum()
 
-        weighted_mean_select = sqlalchemy.sql.text('''
-            SELECT
-                SUM(wt.weight),
-                SUM(sale.sale_amount * wt.weight)/GREATEST(1,SUM(wt.weight)) as mean,
-                count(*) as rows
-            FROM sale
-                INNER JOIN item on sale.item_id = item.id
-                INNER JOIN ('''+weight_query+''') as wt
-                    ON wt.id = sale.id
-            WHERE
-                item.active = 1 AND
-                item.league = :league AND
-                sale.name = :name AND
-                sale.sale_currency = :currency''' + restrict_clause)
-        # Our weight unit is how long in seconds we should go before
-        # beginning to decay a value. Decay is currently linear
-        unit = 24*60*60
-        weight, weighted_mean, count_rows = self.db.session.execute(
-            weighted_mean_select, {
-                'name': name,
-                'currency': currency,
-                'league': league,
-                'now': sale_time,
-                'unit': unit,
-                **restrict_args}).fetchone()
+        if count > 3 and stddev > mean/2:
+            self.logger.debug(
+                "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
+                name, currency, stddev, mean)
+            # Throw out values outside of 2 stddev and try again
+            prices_ok = numpy.absolute(prices-mean) <= stddev*2
+            prices = numpy.extract(prices_ok, prices)
+            weights = numpy.extract(prices_ok, weights)
+            mean, stddev = calc_mean_std(prices, weights)
+            count2 = len(prices)
+            total_weight = weights.sum()
+            self.logger.debug(
+                "Recalibration ignored %s rows, final stddev=%s, mean=%s",
+                count - count2, stddev, mean)
+            count = count2
 
-        self.logger.debug(
-            "Weighted mean sale of %s for %s %s",
-            name, weighted_mean, currency)
-
-        if weighted_mean is None or not count_rows:
-            return None
-
-        weighted_stddev_select = sqlalchemy.sql.text('''
-            SELECT
-                SQRT(
-                    SUM(wt.weight * POW(sale.sale_amount - :weighted_mean, 2)) /
-                        ((:count_rows * SUM(wt.weight)) / :count_rows)
-                ) as weighted_stddev
-            FROM sale
-                INNER JOIN item on sale.item_id = item.id
-                INNER JOIN ('''+weight_query+''') as wt
-                    ON wt.id = sale.id
-            WHERE
-                item.active = 1 AND
-                item.league = :league AND
-                sale.name = :name AND
-                sale.sale_currency = :currency''' + restrict_clause)
-        weighted_stddev, = self.db.session.execute(
-            weighted_stddev_select, {
-                'name': name,
-                'currency': currency,
-                'league': league,
-                'count_rows': count_rows,
-                'weighted_mean': weighted_mean,
-                'now': sale_time,
-                'unit': unit,
-                **restrict_args}).fetchone()
-
-        return (weighted_mean, weighted_stddev, weight, count_rows)
+        return (float(mean), float(stddev), float(total_weight), count)
 
     def _update_currency_summary(
             self, name, currency, league, price, sale_time):
@@ -266,31 +268,30 @@ class CurrencyPostprocessor:
         query = query.filter(poefixer.CurrencySummary.from_currency == name)
         query = query.filter(poefixer.CurrencySummary.to_currency == currency)
         query = query.filter(poefixer.CurrencySummary.league == league)
-        do_update = query.one_or_none() is not None
+        existing = query.one_or_none()
 
-        weighted_mean, weighted_stddev, weight, count = self._get_mean_and_std(
-            name, currency, league, sale_time)
+        now = int(time.time())
+
+        if (
+                self.recent and
+                existing and
+                existing.count >= 10 and
+                existing and existing.updated_at >= now-self.recent):
+            self.logger.debug(
+                "Skipping cached currency: %s->%s %s(%s)",
+                name, currency, league, price)
+            return
+
+        weighted_mean, weighted_stddev, weight, count = \
+            self._get_mean_and_std(name, currency, league, sale_time)
+
         self.logger.debug(
             "Weighted stddev of sale of %s in %s = %s",
             name, currency, weighted_stddev)
         if weighted_stddev is None:
             return None
-        elif count > 3 and weighted_stddev > weighted_mean/2.0:
-            self.logger.debug(
-                "%s->%s: Large stddev=%s vs mean=%s, recalibrating",
-                name, currency, weighted_stddev, weighted_mean)
-            weighted_mean, weighted_stddev, weight, count2 = self._get_mean_and_std(
-                name, currency, league, sale_time,
-                restrict=True,
-                mean=weighted_mean,
-                stddev=weighted_stddev)
-            self.logger.debug(
-                "Recalibration ignored %s rows, final stddev=%s, mean=%s",
-                count - count2, weighted_stddev, weighted_mean)
-            count = count2
 
-
-        if do_update:
+        if existing:
             cmd = sqlalchemy.sql.expression.update(poefixer.CurrencySummary)
             cmd = cmd.where(
                 poefixer.CurrencySummary.from_currency == name)
@@ -304,15 +305,17 @@ class CurrencyPostprocessor:
             add_values = {
                 'from_currency': name,
                 'to_currency': currency,
-                'league': league}
+                'league': league,
+                'created_at': int(time.time())}
         cmd = cmd.values(
             count=count,
             mean=weighted_mean,
             weight=weight,
-            standard_dev=weighted_stddev, **add_values)
+            standard_dev=weighted_stddev,
+            updated_at=int(time.time()), **add_values)
         self.db.session.execute(cmd)
 
-    def _find_value_of(self, name, league, price):
+    def find_value_of(self, name, league, price):
         """
         Return the best current understanding of the value of the
         named currency, in chaos, in the given `league`,
@@ -349,13 +352,17 @@ class CurrencyPostprocessor:
         for row in query.all():
             target = row.to_currency
             if target == 'Chaos Orb':
-                if high_score and row.weight >= high_score:
+                if not high_score or row.weight >= high_score:
                     self.logger.debug(
                         "Conversion discovered %s -> Chaos = %s",
                         name, row.mean)
                     high_score = row.weight
                     conversion = row.mean
                 break
+            if high_score and row.weight <= high_score:
+                # Can't get better than the high score
+                continue
+
             query2 = self.db.session.query(poefixer.CurrencySummary)
             query2 = query2.filter(from_currency_field == target)
             query2 = query2.filter(to_currency_field == 'Chaos Orb')
@@ -368,8 +375,7 @@ class CurrencyPostprocessor:
                     conversion = row.mean * row2.mean
                     self.logger.debug(
                         "Conversion discovered %s -> %s (%s) -> Chaos (%s) = %s",
-                        name, row2.from_currency, row.mean,
-                        row2.mean, conversion)
+                        name, target, row.mean, row2.mean, conversion)
 
         if high_score:
             return conversion * price
@@ -379,16 +385,22 @@ class CurrencyPostprocessor:
             query = query.filter(to_currency_field == name)
             query = query.filter(league_field == league)
             row = query.one_or_none()
+
             if row:
-                return (1.0 / row.mean) * price
+                inverse = 1.0/row.mean
+                if row:
+                    self.logger.debug(
+                        "Falling back on inverse Chaos -> %s pricing: %s",
+                        name, inverse)
+                    return inverse * price
 
         return None
 
     def _process_sale(self, row):
         if not (
                 (row.Item.note and row.Item.note.startswith('~')) or
-                row.Stash.stash.startswith('~')):
-            self.logger.debug("No sale")
+                row.stash.startswith('~')):
+            # No sale
             return None
         is_currency = 'currency' in row.Item.category
         if is_currency:
@@ -396,20 +408,22 @@ class CurrencyPostprocessor:
         else:
             name = (row.Item.name + " " + row.Item.typeLine).strip()
         pricing = row.Item.note
-        stash_pricing = row.Stash.stash
+        stash_pricing = row.stash
         stash_price, stash_currency = self.parse_note(stash_pricing)
         price, currency = self.parse_note(pricing)
         if price is None:
             # No item price, so fall back to stash
             price, currency = (stash_price, stash_currency)
         if price is None or price == 0:
-            self.logger.debug("No sale")
+            # No sale
             return None
-        self.logger.debug(
-            "%s%sfor sale for %s %s" % (
-                name,
-                ("(currency) " if is_currency else ""),
-                price, currency))
+        # We used to summarize each sale, but this can be a fairly
+        # tight loop, so TODO: make this conditional on debug logging.
+        #self.logger.debug(
+        #    "%s%s for sale for %s %s" % (
+        #        name,
+        #        ("(currency) " if is_currency else ""),
+        #        price, currency))
         existing = self.db.session.query(poefixer.Sale).filter(
             poefixer.Sale.item_id == row.Item.id).one_or_none()
 
@@ -434,7 +448,6 @@ class CurrencyPostprocessor:
 
         # Add it so we can re-calc values...
         self.db.session.add(existing)
-        self.db.session.flush()
 
         league = row.Item.league
 
@@ -478,7 +491,8 @@ class CurrencyPostprocessor:
         def create_table(table, name):
             try:
                 table.__table__.create(bind=self.db.session.bind)
-            except sqlalchemy.exc.InternalError as e:
+            except (sqlalchemy.exc.OperationalError,
+                    sqlalchemy.exc.InternalError) as e:
                 if 'already exists' not in str(e):
                     raise
                 self.logger.debug("%s table already exists.", name)
@@ -531,6 +545,8 @@ class CurrencyPostprocessor:
             # is the item price with the stash price as a fallback.
             count = 0
             for row in query.all():
+                if not (row.Item.note or row.stash):
+                    continue
                 max_id = row.Item.id
                 count += 1
                 self.logger.debug("Row in %s" % row.Item.id)
@@ -538,7 +554,9 @@ class CurrencyPostprocessor:
                     self.logger.info(
                         "%s rows in... (%s)",
                         count + offset, row.Item.updated_at)
+
                 row_id = self._process_sale(row)
+
                 if row_id:
                     last_row = row_id
 
@@ -546,6 +564,8 @@ class CurrencyPostprocessor:
             offset += count
             self.db.session.commit()
             all_processed += count
+            if self.limit and all_processed > self.limit:
+                break
 
         return (all_processed, last_row)
 

@@ -1,6 +1,12 @@
 # poefixer
 A Path of Exile Stash API reader and database manager
 
+## Context
+
+Path of Exile is an action RPG video game with a massive in-game economy, mediated by external websites. To facilitate this interaction, the publisher maintains an HTTP/JSON API for access to the live feed of items and player pricing. This software is designed to harvest that API, store it to a local database and perform some basic post-processing to get a set of derivative data suitable for further analysis.
+
+## Content
+
 This module consists of two major components, both of which are
 accessible from the top-level namespace or can be imported individually:
 
@@ -14,6 +20,8 @@ though if you're not whitelisted, you will be rate restricted by default.
 The *db module* is what takes the objects created by stashapi and writes them
 to your database. This creates a _current_ (not time series) database of all
 stashes and items.
+
+## Usage
 
 To load data:
 
